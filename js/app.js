@@ -1028,7 +1028,168 @@ const App = (() => {
     document.getElementById('btn-import')?.addEventListener('click', importProfile);
   }
 
-  return { init, state };
+  // ---- PDF SHEET EXPORT ----
+  async function exportToSheet() {
+    console.log('[Sheet] Iniciando exportação...');
+
+    if (typeof PDFLib === 'undefined') {
+      console.error('[Sheet] PDFLib não carregado!');
+      alert('pdf-lib não carregado. Abra o site via servidor local (start.bat), não direto pelo arquivo.');
+      return;
+    }
+    console.log('[Sheet] PDFLib OK');
+
+    notify('Gerando ficha...');
+
+    try {
+      const { PDFDocument } = PDFLib;
+
+      console.log('[Sheet] Fazendo fetch do PDF...');
+      const response = await fetch('sheets/br_sheet.pdf');
+      console.log('[Sheet] Fetch status:', response.status, response.ok);
+      if (!response.ok) throw new Error(`Falha ao carregar PDF base (status ${response.status}). Abra via start.bat`);
+      const pdfBytes = await response.arrayBuffer();
+      console.log('[Sheet] PDF carregado:', pdfBytes.byteLength, 'bytes');
+      const pdfDoc = await PDFDocument.load(pdfBytes);
+      console.log('[Sheet] PDFDocument criado');
+      const form = pdfDoc.getForm();
+
+      function setField(name, value) {
+        try { form.getTextField(name).setText(value != null ? String(value) : ''); } catch(e) {}
+      }
+
+      function setCheck(name, checked) {
+        try {
+          const cb = form.getCheckBox(name);
+          checked ? cb.check() : cb.uncheck();
+        } catch(e) {}
+      }
+
+      const a = state.attributes;
+      const p = state.profile;
+      const defenses = {
+        physical:  10 + a.forca + a.velocidade,
+        cognitive: 10 + a.intelecto + a.vontade,
+        spiritual: 10 + a.consciencia + a.presenca,
+      };
+
+      // Identificação (campos duplicados em página 1 e 2)
+      const forBothPages = (baseName, value) => {
+        setField(`${baseName}.Page 1`, value);
+        setField(`${baseName}.Page 2`, value);
+      };
+      forBothPages('Character Name', p.name || '');
+      forBothPages('Level', String(p.level));
+      forBothPages('Ancestry', p.race === 'human' ? 'Humano' : 'Cantor');
+      forBothPages('Paths', p.radiantClass || '');
+
+      // Atributos (duplicados em ambas as páginas)
+      forBothPages('Strength',  a.forca       > 0 ? String(a.forca)       : '');
+      forBothPages('Speed',     a.velocidade  > 0 ? String(a.velocidade)  : '');
+      forBothPages('Intellect', a.intelecto   > 0 ? String(a.intelecto)   : '');
+      forBothPages('Willpower', a.vontade     > 0 ? String(a.vontade)     : '');
+      forBothPages('Awareness', a.consciencia > 0 ? String(a.consciencia) : '');
+      forBothPages('Presence',  a.presenca    > 0 ? String(a.presenca)    : '');
+
+      // Defesas (duplicadas em ambas as páginas)
+      forBothPages('Physical Defense',  String(defenses.physical));
+      forBothPages('Cognitive Defense', String(defenses.cognitive));
+      forBothPages('Spiritual Defense', String(defenses.spiritual));
+
+      // Perícias – campos de pontuação (rank numérico)
+      const SKILL_SCORE_FIELDS = {
+        agilidade:       'Agility',
+        atletismo:       'Athletics',
+        armamentoPesado: 'Heavy Weapons',
+        armamentoLeve:   'Light Weapons',
+        furtividade:     'Stealth',
+        ladroagem:       'Thievery',
+        manufatura:      'Crafting',
+        deducao:         'Deduction',
+        disciplina:      'Discipline',
+        intimidacao:     'Intimidation',
+        saber:           'Lore',
+        medicina:        'Medicine',
+        dissimulacao:    'Deception',
+        intuicao:        'Insight',
+        lideranca:       'Leadership',
+        percepcao:       'Perception',
+        persuasao:       'Persuasion',
+        sobrevivencia:   'Survival',
+      };
+      for (const [key, fieldName] of Object.entries(SKILL_SCORE_FIELDS)) {
+        const val = state.pericias[key] || 0;
+        setField(fieldName, val > 0 ? String(val) : '');
+      }
+
+      // Perícias – círculos de rank (checkboxes), ordenados esq→dir (rank 1 = 1º)
+      const SKILL_RANK_BOXES = {
+        // Coluna esquerda (Físico)
+        agilidade:       [7, 10, 6, 9, 8],
+        atletismo:       [12, 15, 11, 14, 13],
+        armamentoPesado: [17, 20, 16, 19, 18],
+        armamentoLeve:   [22, 25, 21, 24, 23],
+        furtividade:     [27, 30, 26, 29, 28],
+        ladroagem:       [32, 35, 31, 34, 33],
+        // Coluna central (Cognitivo)
+        manufatura:      [42, 45, 41, 44, 43],
+        deducao:         [47, 50, 46, 49, 48],
+        disciplina:      [52, 55, 51, 54, 53],
+        intimidacao:     [57, 60, 56, 59, 58],
+        saber:           [62, 65, 61, 64, 63],
+        medicina:        [67, 70, 66, 69, 68],
+        // Coluna direita (Espiritual)
+        dissimulacao:    [77, 80, 76, 79, 78],
+        intuicao:        [82, 85, 81, 84, 83],
+        lideranca:       [87, 90, 86, 89, 88],
+        percepcao:       [92, 95, 91, 94, 93],
+        persuasao:       [97, 100, 96, 99, 98],
+        sobrevivencia:   [102, 105, 101, 104, 103],
+      };
+      for (const [key, boxes] of Object.entries(SKILL_RANK_BOXES)) {
+        const rank = state.pericias[key] || 0;
+        for (let i = 0; i < boxes.length; i++) {
+          setCheck(`Rank Box ${boxes[i]}`, i < rank);
+        }
+      }
+
+      // Talentos desbloqueados
+      const allSkills = [...CosData.SKILLS, ...CosData.RADIANT_SKILLS];
+      const talentNames = [...state.unlockedSkills]
+        .map(id => { const s = allSkills.find(sk => sk.id === id); return s ? s.name : null; })
+        .filter(Boolean);
+      const uniqueTalents = [...new Set(talentNames)].sort();
+
+      const chunk = 40;
+      setField('Talents 1', uniqueTalents.slice(0, chunk).join('\n'));
+      setField('Talents 2', uniqueTalents.slice(chunk, chunk * 2).join('\n'));
+      setField('Talents 3', uniqueTalents.slice(chunk * 2).join('\n'));
+
+      // Download
+      console.log('[Sheet] Salvando PDF...');
+      const filledBytes = await pdfDoc.save();
+      console.log('[Sheet] PDF gerado:', filledBytes.byteLength, 'bytes');
+      const blob = new Blob([filledBytes], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `ficha_${p.name || 'personagem'}.pdf`;
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      console.log('[Sheet] Download iniciado!');
+      notify('Ficha exportada!');
+
+    } catch(err) {
+      console.error('[Sheet] ERRO:', err);
+      alert('Erro ao gerar ficha: ' + err.message);
+      notify('Erro ao gerar ficha: ' + err.message);
+    }
+  }
+
+  return { init, state, exportToSheet };
 
 })();
 

@@ -20,6 +20,20 @@
   <!-- Skill Detail Modal -->
   <div id="skill-modal"></div>
 
+  <!-- Radiant Wheel Overlay -->
+  <div id="radiant-wheel">
+    <button class="radiant-wheel-close" id="radiant-wheel-close">&times;</button>
+    <div class="radiant-wheel-title">Escolha sua Ordem Radiante</div>
+    <p class="radiant-wheel-subtitle">A escolha é permanente — apenas um Reset redefine a Ordem.</p>
+    <div class="radiant-wheel-container" id="radiant-wheel-container">
+      <svg class="radiant-wheel-svg" id="radiant-wheel-svg" viewBox="0 0 560 560" preserveAspectRatio="xMidYMid meet"></svg>
+      <div id="radiant-wheel-ring"></div>
+      <div class="rw-center" id="rw-center">
+        <img src="svg/Cosmere_symbol.svg" alt="Cosmere">
+      </div>
+    </div>
+  </div>
+
   <!-- Main Layout -->
   <div id="app">
 
@@ -94,6 +108,9 @@
           <button class="btn" id="btn-export">Exportar JSON</button>
           <button class="btn" id="btn-import">Importar JSON</button>
         </div>
+        <div class="save-load-row" style="margin-top: 8px;">
+          <button class="btn primary" id="btn-sheet" style="width:100%;" onclick="App.exportToSheet()">Exportar Ficha PDF</button>
+        </div>
       </div>
 
     </div>
@@ -101,12 +118,16 @@
     <!-- 3D Viewport -->
     <div id="viewport">
       <div class="class-tabs" id="class-tabs"></div>
+      <div id="viewport-center-glyph"></div>
+      <div id="viewport-flash"></div>
     </div>
 
   </div>
 
   <!-- Three.js from CDN (r152 for MeshPhysicalMaterial clearcoat) -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.152.0/build/three.min.js"></script>
+  <!-- pdf-lib for character sheet export -->
+  <script src="node_modules/pdf-lib/dist/pdf-lib.min.js"></script>
   <!-- App Scripts -->
   <script src="js/data.js"></script>
   <script src="js/renderer.js"></script>
