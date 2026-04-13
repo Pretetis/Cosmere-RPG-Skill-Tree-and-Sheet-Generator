@@ -2130,19 +2130,19 @@ const App = (() => {
   // ---- PÁGINA VISUAL DO PDF (gráficos + mapa de habilidades) ----
 
   const _PDF_CLASS_COLORS = {
-    'Agente':    [0.294,0.871,0.502], 'Emissário': [0.980,0.800,0.082],
-    'Caçador':   [0.973,0.443,0.443], 'Líder':     [0.376,0.647,0.980],
-    'Erudito':   [0.655,0.545,0.980], 'Guerreiro': [0.984,0.573,0.188],
-    'Corredor dos Ventos':       [0.220,0.741,0.973],
-    'Rompe-Céu':                 [0.984,0.749,0.141],
-    'Pulverizador':              [0.937,0.267,0.267],
-    'Dançarino dos Precipícios': [0.204,0.831,0.600],
-    'Sentinela da Verdade':      [0.176,0.831,0.749],
-    'Teceluz':                   [0.941,0.671,0.988],
-    'Alternauta':                [0.886,0.910,0.941],
-    'Plasmador':                 [0.753,0.518,0.988],
-    'Guardião das Pedras':       [0.659,0.490,0.306],
-    'Cantor':                    [0.878,0.482,0.329],
+    'Agente':    [0.1, 0.6, 0.3], 'Emissário': [0.8, 0.6, 0.0],
+    'Caçador':   [0.8, 0.2, 0.2], 'Líder':     [0.1, 0.4, 0.8],
+    'Erudito':   [0.4, 0.3, 0.8], 'Guerreiro': [0.8, 0.4, 0.1],
+    'Corredor dos Ventos':       [0.1, 0.5, 0.8],
+    'Rompe-Céu':                 [0.8, 0.6, 0.1],
+    'Pulverizador':              [0.8, 0.2, 0.2],
+    'Dançarino dos Precipícios': [0.1, 0.6, 0.4],
+    'Sentinela da Verdade':      [0.1, 0.6, 0.5],
+    'Teceluz':                   [0.7, 0.4, 0.8],
+    'Alternauta':                [0.4, 0.4, 0.5], 
+    'Plasmador':                 [0.5, 0.3, 0.8],
+    'Guardião das Pedras':       [0.5, 0.3, 0.2],
+    'Cantor':                    [0.7, 0.3, 0.2],
   };
 
   const _PDF_CLASS_ABBREV = {
@@ -2152,57 +2152,78 @@ const App = (() => {
     'Sentinela da Verdade':'SdV','Teceluz':'TEC','Alternauta':'ALT',
     'Plasmador':'PLA','Guardião das Pedras':'GdP','Cantor':'CAN',
   };
+  
 
   // Gráfico estrela (radar)
   function _drawRadarPdf(page, cx, cy, R, labels, values, maxVal, cr, font, fontBold, title) {
     const { rgb } = PDFLib;
     const N = labels.length;
+    // O ângulo 0 começa no topo (Math.PI/2) e gira no sentido horário
     const ang = i => Math.PI / 2 - (2 * Math.PI * i / N);
 
-    // Título
+    // Título do gráfico
     const tw = fontBold.widthOfTextAtSize(title, 7);
     page.drawText(title, { x: cx - tw/2, y: cy + R + 15, size: 7,
-      font: fontBold, color: rgb(cr[0]*0.9, cr[1]*0.9, cr[2]*0.9) });
+      font: fontBold, color: rgb(0.15, 0.15, 0.15) }); // Corrigido para fundo branco
 
-    // Anéis de escala
-    [0.25, 0.5, 0.75, 1.0].forEach(s => {
+    // O "centro" do radar agora será um círculo inicial vazado (15% do raio total)
+    // para que as habilidades comecem no anel "1", sem ficarem coladas num único ponto.
+    const innerR = R * 0.15;
+    const usableR = R - innerR;
+    
+    // Função que mapeia os valores de 0 até maxVal, começando a partir do anel interno
+    const getRad = (val) => innerR + (Math.min(val / maxVal, 1) * usableR);
+
+    // Anéis de escala (5 marcações: centro, 2, 3, 4 e Borda)
+    const fractions = [0, 0.25, 0.5, 0.75, 1.0]; 
+    fractions.forEach(f => {
+      const r = innerR + (f * usableR);
       const path = Array.from({length: N}, (_, i) =>
-        `${i===0?'M':'L'} ${(Math.cos(ang(i))*R*s).toFixed(1)} ${(Math.sin(ang(i))*R*s).toFixed(1)}`
+        `${i===0?'M':'L'} ${(Math.cos(ang(i))*r).toFixed(1)} ${(-Math.sin(ang(i))*r).toFixed(1)}`
       ).join(' ') + ' Z';
-      page.drawSvgPath(path, { x: cx, y: cy, borderColor: rgb(0.10,0.13,0.23), borderWidth: 0.5 });
+      
+      // Bordas clareadas para se integrarem melhor ao fundo branco
+      page.drawSvgPath(path, { x: cx, y: cy, borderColor: rgb(0.85, 0.85, 0.85), borderWidth: 0.5 });
     });
 
-    // Eixos radiais
+    // Eixos radiais (começam no innerR e vão até a borda R)
     for (let i = 0; i < N; i++) {
-      page.drawLine({ start: {x: cx, y: cy},
-        end: {x: cx + Math.cos(ang(i))*R, y: cy + Math.sin(ang(i))*R},
-        color: rgb(0.10,0.13,0.23), thickness: 0.5 });
+      page.drawLine({ 
+        start: { x: cx + Math.cos(ang(i))*innerR, y: cy + Math.sin(ang(i))*innerR },
+        end:   { x: cx + Math.cos(ang(i))*R,      y: cy + Math.sin(ang(i))*R },
+        color: rgb(0.85, 0.85, 0.85), thickness: 0.5 
+      });
     }
 
-    // Polígono de dados
+    // Polígono de dados (a "capa")
     const dpath = Array.from({length: N}, (_, i) => {
-      const f = Math.min(values[i]/maxVal, 1);
-      return `${i===0?'M':'L'} ${(Math.cos(ang(i))*R*f).toFixed(1)} ${(Math.sin(ang(i))*R*f).toFixed(1)}`;
+      const r = getRad(values[i]);
+      return `${i===0?'M':'L'} ${(Math.cos(ang(i))*r).toFixed(1)} ${(-Math.sin(ang(i))*r).toFixed(1)}`;
     }).join(' ') + ' Z';
+    
     page.drawSvgPath(dpath, { x: cx, y: cy,
       color: rgb(cr[0],cr[1],cr[2]), opacity: 0.20,
       borderColor: rgb(cr[0],cr[1],cr[2]), borderWidth: 1.4, borderOpacity: 0.90 });
 
     // Pontos nos vértices + rótulos
     for (let i = 0; i < N; i++) {
-      const f = Math.min(values[i]/maxVal, 1);
-      const px = cx + Math.cos(ang(i))*R*f;
-      const py = cy + Math.sin(ang(i))*R*f;
+      const r = getRad(values[i]);
+      const px = cx + Math.cos(ang(i))*r;
+      const py = cy + Math.sin(ang(i))*r; 
+      
+      // Desenha a bolinha (nó do atributo/trilha)
       page.drawEllipse({ x: px, y: py, xScale: 2.3, yScale: 2.3, color: rgb(cr[0],cr[1],cr[2]) });
+      
+      // Posição do texto (um pouco além da borda externa)
       const lx = cx + Math.cos(ang(i))*(R + 12);
-      const ly = cy + Math.sin(ang(i))*(R + 12);
+      const ly = cy + Math.sin(ang(i))*(R + 12); 
+      
       const lw = font.widthOfTextAtSize(labels[i], 6.5);
       page.drawText(labels[i], { x: lx - lw/2, y: ly - 3, size: 6.5,
-        font, color: rgb(0.60,0.63,0.74) });
+        font, color: rgb(0.2, 0.2, 0.2) });
     }
   }
 
-  // Mapa de habilidades (layout radial por rank)
   function _drawSkillMapPdf(page, cx, cy, mapR, _font, fontBold) {
     const { rgb } = PDFLib;
 
@@ -2218,49 +2239,93 @@ const App = (() => {
     }
 
     const numE    = entries.length;
-    const rootR   = mapR * 0.20;
+    const rootR   = mapR * 0.18;
     const outerR  = mapR * 0.88;
-    const sectH   = (Math.PI / numE) * 0.55;  // metade do setor angular
+    const sectH   = (Math.PI / numE) * 0.80; // Margem de segurança de ângulo entre classes
 
     // Anéis decorativos de fundo
     [0.22, 0.54, 0.88].forEach(f => {
       page.drawEllipse({ x: cx, y: cy, xScale: mapR*f, yScale: mapR*f,
-        borderColor: rgb(0.09,0.11,0.20), borderWidth: 0.6 });
+        borderColor: rgb(0.9, 0.9, 0.9), borderWidth: 0.6 });
     });
 
-    // Raios (spokes)
+    // Raios (spokes) divisórios sutis
     entries.forEach((_, idx) => {
-      const a = Math.PI/2 - (2*Math.PI*idx/numE);
+      const a = Math.PI/2 - (2*Math.PI*idx/numE) + (Math.PI/numE); 
       page.drawLine({
-        start: { x: cx + Math.cos(a)*mapR*0.06, y: cy + Math.sin(a)*mapR*0.06 },
-        end:   { x: cx + Math.cos(a)*outerR,    y: cy + Math.sin(a)*outerR },
-        color: rgb(0.09,0.11,0.20), thickness: 0.4 });
+        start: { x: cx + Math.cos(a)*rootR, y: cy + Math.sin(a)*rootR },
+        end:   { x: cx + Math.cos(a)*outerR, y: cy + Math.sin(a)*outerR },
+        color: rgb(0.94, 0.94, 0.94), thickness: 0.5 });
     });
 
-    // Calcular posições por rank
+    // Calcular posições agrupando por Rank para garantir espaçamento
     const positions = {};
-    entries.forEach(({ skills }, idx) => {
-      const angle = Math.PI/2 - (2*Math.PI*idx/numE);
-      const root  = skills.find(s => s.rank === 0);
+    entries.forEach(({ cls, skills, isRadiant }, idx) => {
+      const angleCenter = Math.PI/2 - (2*Math.PI*idx/numE);
+      const root = skills.find(s => s.rank === 0);
       if (!root) return;
-      positions[root.id] = { x: cx + Math.cos(angle)*rootR, y: cy + Math.sin(angle)*rootR };
+      
+      positions[root.id] = { x: cx + Math.cos(angleCenter)*rootR, y: cy + Math.sin(angleCenter)*rootR };
+      const nodeAngles = { [root.id]: angleCenter };
 
+      // Agrupar habilidades por rank
+      const byRank = {};
+      skills.forEach(s => {
+        if (s.rank > 0) {
+          if (!byRank[s.rank]) byRank[s.rank] = [];
+          byRank[s.rank].push(s);
+        }
+      });
+      
+      const findFn = isRadiant ? CosData.findRadiantSkillByName : CosData.findSkillByName;
+      
       for (let rank = 1; rank <= 5; rank++) {
-        const rs = skills.filter(s => s.rank === rank);
-        if (!rs.length) continue;
-        const r = rootR + (rank/5)*(outerR - rootR);
-        rs.forEach((skill, i) => {
-          const t = rs.length > 1 ? i/(rs.length-1) - 0.5 : 0;
-          const a = angle + t * 2 * sectH;
-          positions[skill.id] = { x: cx + Math.cos(a)*r, y: cy + Math.sin(a)*r };
+        if (!byRank[rank]) continue;
+        const nodes = byRank[rank];
+        
+        // Ordena baseando-se nos pais para minimizar linhas cruzadas
+        nodes.forEach(node => {
+          let sum = 0, count = 0;
+          node.deps.forEach(d => {
+            const p = findFn(d, cls);
+            if (p && nodeAngles[p.id] !== undefined) {
+              sum += nodeAngles[p.id];
+              count++;
+            }
+          });
+          node._tAng = count > 0 ? (sum / count) : angleCenter;
+        });
+        nodes.sort((a, b) => a._tAng - b._tAng);
+        
+        // Distribui uniformemente no arco da classe
+        nodes.forEach((node, i) => {
+          let t = 0;
+          if (nodes.length > 1) {
+            t = (i / (nodes.length - 1)) - 0.5; // De -0.5 a 0.5
+          }
+          const finalAng = angleCenter + t * (sectH * 2);
+          nodeAngles[node.id] = finalAng;
+          
+          let r = rootR + (rank / 5) * (outerR - rootR);
+          
+          // ZIGZAG: Se houver muitos nós no mesmo rank, alternamos o raio 
+          // para afastar os nós fisicamente e não deixá-los se tocando
+          if (nodes.length > 2) {
+             r += (i % 2 === 0) ? 3.5 : -3.5;
+          }
+          
+          positions[node.id] = {
+             x: cx + Math.cos(finalAng) * r,
+             y: cy + Math.sin(finalAng) * r
+          };
         });
       }
     });
 
-    // Conexões (primeiro, para ficarem atrás dos nós)
+    // Conexões (linhas) - desenhadas primeiro para ficarem embaixo
     entries.forEach(({ cls, skills, isRadiant }) => {
       const findFn = isRadiant ? CosData.findRadiantSkillByName : CosData.findSkillByName;
-      const clr = _PDF_CLASS_COLORS[cls] || [0.3,0.3,0.4];
+      const clr = _PDF_CLASS_COLORS[cls] || [0.4, 0.4, 0.4];
       skills.forEach(skill => {
         const to = positions[skill.id]; if (!to) return;
         skill.deps.forEach(depName => {
@@ -2268,29 +2333,26 @@ const App = (() => {
           const from = positions[parent.id]; if (!from) return;
           const active = state.unlockedSkills.has(skill.id) && state.unlockedSkills.has(parent.id);
           page.drawLine({ start: {x: from.x, y: from.y}, end: {x: to.x, y: to.y},
-            color: active ? rgb(clr[0],clr[1],clr[2]) : rgb(0.11,0.14,0.21),
-            thickness: active ? 0.9 : 0.35 });
+            color: active ? rgb(clr[0],clr[1],clr[2]) : rgb(0.88, 0.88, 0.88),
+            thickness: active ? 1.0 : 0.5 });
         });
       });
     });
 
-    // Nós
+    // Nós (bolinhas) - Tamanho reduzido para melhor leitura
     entries.forEach(({ cls, skills }) => {
-      const clr = _PDF_CLASS_COLORS[cls] || [0.3,0.3,0.4];
+      const clr = _PDF_CLASS_COLORS[cls] || [0.4, 0.4, 0.4];
       skills.forEach(skill => {
         const pos = positions[skill.id]; if (!pos) return;
         const unlocked = state.unlockedSkills.has(skill.id);
-        const nr = skill.rank === 0 ? 4.5 : 2.5;
+        const nr = skill.rank === 0 ? 3.2 : 1.6; // Raios menores
         if (unlocked) {
-          // Aura
-          page.drawEllipse({ x: pos.x, y: pos.y, xScale: nr*2.0, yScale: nr*2.0,
-            color: rgb(clr[0],clr[1],clr[2]), opacity: 0.12 });
-          // Núcleo
           page.drawEllipse({ x: pos.x, y: pos.y, xScale: nr, yScale: nr,
             color: rgb(clr[0],clr[1],clr[2]) });
         } else {
           page.drawEllipse({ x: pos.x, y: pos.y, xScale: nr, yScale: nr,
-            borderColor: rgb(0.19,0.23,0.35), borderWidth: 0.6 });
+            color: rgb(1, 1, 1),
+            borderColor: rgb(0.65, 0.65, 0.65), borderWidth: 0.7 });
         }
       });
     });
@@ -2298,13 +2360,13 @@ const App = (() => {
     // Rótulos das classes
     entries.forEach(({ cls }, idx) => {
       const a   = Math.PI/2 - (2*Math.PI*idx/numE);
-      const lx  = cx + Math.cos(a)*(outerR + 14);
-      const ly  = cy + Math.sin(a)*(outerR + 14);
-      const clr = _PDF_CLASS_COLORS[cls] || [0.5,0.5,0.6];
+      const lx  = cx + Math.cos(a)*(outerR + 12);
+      const ly  = cy + Math.sin(a)*(outerR + 12);
+      const clr = _PDF_CLASS_COLORS[cls] || [0.4, 0.4, 0.4];
       const lbl = _PDF_CLASS_ABBREV[cls] || cls.slice(0,3).toUpperCase();
       const lw  = fontBold.widthOfTextAtSize(lbl, 6.5);
       page.drawText(lbl, { x: lx - lw/2, y: ly - 3, size: 6.5,
-        font: fontBold, color: rgb(clr[0],clr[1],clr[2]) });
+        font: fontBold, color: rgb(clr[0]*0.8, clr[1]*0.8, clr[2]*0.8) });
     });
   }
 
@@ -2316,18 +2378,18 @@ const App = (() => {
     const W = 595, H = 842;
     const page = pdfDoc.addPage([W, H]);
 
-    // Fundo escuro
-    page.drawRectangle({ x: 0, y: 0, width: W, height: H, color: rgb(0.039,0.043,0.063) });
+    // Fundo branco para impressão limpa
+    page.drawRectangle({ x: 0, y: 0, width: W, height: H, color: rgb(1, 1, 1) });
 
     // Título
     const titleTxt = `MAPA — ${state.profile.name || 'Personagem'}  ·  Nível ${state.profile.level}`;
     const tw = fontBold.widthOfTextAtSize(titleTxt, 10);
     page.drawText(titleTxt, { x: W/2 - tw/2, y: H - 21, size: 10,
-      font: fontBold, color: rgb(0.83,0.66,0.33) });
+      font: fontBold, color: rgb(0.83, 0.66, 0.33) });
 
-    // ---- GRÁFICOS RADAR (faixa superior ~175pt) ----
-    const chartCy = H - 108;
-    const chartR  = 60;
+    // ---- GRÁFICOS RADAR (Aumentados e sem linhas de separação) ----
+    const chartCy = H - 115; // Posicionado um pouco mais abaixo para acomodar o novo tamanho
+    const chartR  = 80;      // Aumentado de 60 para 80
 
     // Atributos (esquerda)
     const attrLabels = ['FOR','VEL','INT','VON','CON','PRE'];
@@ -2337,11 +2399,9 @@ const App = (() => {
       state.attributes.consciencia,state.attributes.presenca,
     ];
     _drawRadarPdf(page, 148, chartCy, chartR, attrLabels, attrVals, 10,
-      [0.24,0.61,0.89], font, fontBold, 'ATRIBUTOS');
+      [0.24, 0.61, 0.89], font, fontBold, 'ATRIBUTOS');
 
-    // Divisor vertical entre os dois gráficos
-    page.drawLine({ start: {x: W/2, y: H-188}, end: {x: W/2, y: H-33},
-      color: rgb(0.12,0.15,0.25), thickness: 0.5 });
+    // [LINHA REMOVIDA] Divisor vertical entre os dois gráficos
 
     // Trilhas heróicas (direita)
     const allSkillsForPdf = [...CosData.SKILLS, ...(CosData.RADIANT_SKILLS || [])];
@@ -2356,16 +2416,13 @@ const App = (() => {
     const trackLabels = trackClasses.map(c => _PDF_CLASS_ABBREV[c] || c.slice(0,3).toUpperCase());
     const trackVals   = trackClasses.map(c => ((clsUnlocked[c]||0) / (clsTotal[c]||1)) * 10);
     _drawRadarPdf(page, 447, chartCy, chartR, trackLabels, trackVals, 10,
-      [0.83,0.66,0.33], font, fontBold, 'TRILHAS HERÓICAS');
-
-    // Separador horizontal
-    page.drawLine({ start: {x: 25, y: H-193}, end: {x: W-25, y: H-193},
-      color: rgb(0.12,0.15,0.25), thickness: 0.7 });
-
+      [0.83, 0.66, 0.33], font, fontBold, 'TRILHAS HERÓICAS');
+      
     // ---- MAPA DE HABILIDADES (restante da página) ----
-    const mapAreaH = H - 193 - 22;
-    const mapCy    = 22 + mapAreaH * 0.50;
-    const mapR     = Math.min(W/2 - 28, mapAreaH/2 - 15);
+    // Ajustado o topo da área do mapa para dar margem aos radares maiores
+    const mapAreaH = H - 210 - 22; 
+    const mapCy    = 22 + mapAreaH * 0.48;
+    const mapR     = Math.min(W/2 - 35, mapAreaH/2 - 25);
     _drawSkillMapPdf(page, W/2, mapCy, mapR, font, fontBold);
   }
 
