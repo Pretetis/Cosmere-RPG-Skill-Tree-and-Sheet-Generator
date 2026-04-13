@@ -77,6 +77,4 @@ http://localhost:8081
 
     start.bat: Script de inicialização rápida para Windows.
 
-Autor: Pretetis
-
 Desenvolido por Pretetis.
