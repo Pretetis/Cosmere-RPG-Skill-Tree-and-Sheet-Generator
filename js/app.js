@@ -92,6 +92,15 @@ const App = (() => {
     await Promise.all([...new Set(allSvgs)].map(fetchSvgText));
   }
 
+  const CLASS_INITIAL_PERICIA = {
+    'Agente':    'intuicao',
+    'Caçador':   'percepcao',
+    'Emissário': 'disciplina',
+    'Erudito':   'saber',
+    'Guerreiro': 'atletismo',
+    'Líder':     'lideranca'
+  };
+
   const state = {
     profile: {
       name: '',
@@ -147,6 +156,11 @@ const App = (() => {
       const keys = CosData.RADIANT_CLASS_PERICIAS[state.profile.radiantClass] || [];
       for (const k of keys) sum += state.radiantPericias[k] || 0;
     }
+
+    if (state.profile.ancestryClass && CLASS_INITIAL_PERICIA[state.profile.ancestryClass]) {
+      sum -= 1;
+    }
+
     return sum;
   }
 
@@ -418,6 +432,43 @@ const App = (() => {
     return { can: true, reason: '' };
   }
 
+  // function toggleSkill(skill) {
+  //   const radiant = isRadiantSkill(skill);
+  //   const additional = isAdditionalSkill(skill);
+
+  //   if (state.unlockedSkills.has(skill.id)) {
+  //     // --- REMOVE ---
+  //     const check = canRemoveSkill(skill);
+  //     if (!check.can) { notify(check.reason); return false; }
+  //     state.unlockedSkills.delete(skill.id);
+  //     state.freeUnlockedSkills.delete(skill.id);
+  //     if (!radiant && !additional) {
+  //       for (const sid of getSharedSkillIds(skill.name)) {
+  //         if (sid !== skill.id) {
+  //           state.unlockedSkills.delete(sid);
+  //           state.freeUnlockedSkills.delete(sid);
+  //         }
+  //       }
+  //     }
+  //     state.spentTalents--;
+
+  //     // Se humano e o 1º talento foi removido, limpa ancestryClass
+  //     if (state.profile.race === 'human' && !radiant && !additional) {
+  //       if (state.spentTalents === 0) {
+  //         state.profile.ancestryClass = null;
+  //       }
+  //     }
+  //     return true;
+
+  //   } else {
+  //     // --- UNLOCK ---
+  //     const check = radiant ? canUnlockRadiantSkill(skill)
+  //                 : additional ? canUnlockAdditionalSkill(skill)
+  //                 : canUnlockSkill(skill);
+  //     if (!check.can) { notify(check.reason); return false; }
+  //     state.unlockedSkills.add(skill.id);
+  //     state.spentTalents++;
+
   function toggleSkill(skill) {
     const radiant = isRadiantSkill(skill);
     const additional = isAdditionalSkill(skill);
@@ -438,7 +489,16 @@ const App = (() => {
       }
       state.spentTalents--;
 
-      // Se humano e o 1º talento foi removido, limpa ancestryClass
+      // Lógica de remoção da classe inicial e da perícia fixa
+      if (!radiant && !additional && skill.rank === 0 && skill.cls === state.profile.ancestryClass) {
+        const pKey = CLASS_INITIAL_PERICIA[skill.cls];
+        if (pKey && state.pericias[pKey] > 0) {
+          state.pericias[pKey] -= 1; // Remove o rank ganho
+        }
+        state.profile.ancestryClass = null; // Libera o slot
+      }
+
+      // Se humano e o 1º talento foi removido... (resto igual)
       if (state.profile.race === 'human' && !radiant && !additional) {
         if (state.spentTalents === 0) {
           state.profile.ancestryClass = null;
@@ -454,6 +514,21 @@ const App = (() => {
       if (!check.can) { notify(check.reason); return false; }
       state.unlockedSkills.add(skill.id);
       state.spentTalents++;
+
+      // === LÓGICA DA PERÍCIA FIXA INICIAL ===
+      // Se for o primeiro Rank 0 mundano que ele compra, vira a Trilha Inicial
+      if (!radiant && !additional && skill.rank === 0 && !state.profile.ancestryClass) {
+        state.profile.ancestryClass = skill.cls;
+        const pKey = CLASS_INITIAL_PERICIA[skill.cls];
+        if (pKey) {
+          state.pericias[pKey] = (state.pericias[pKey] || 0) + 1;
+          const maxRank = getMaxPericiaRank();
+          // Se já estava no limite, trava no limite. O custo vai cair em 1, devolvendo um ponto livre!
+          if (state.pericias[pKey] > maxRank) {
+            state.pericias[pKey] = maxRank;
+          }
+        }
+      }
 
       // Sela a ordem radiante automaticamente no primeiro talento radiante comprado
       if (radiant && !state.profile.radiantClassLocked) {
@@ -1239,6 +1314,7 @@ const App = (() => {
     container.innerHTML = '';
 
     const maxRank = getMaxPericiaRank();
+    const initialClassKey = state.profile.ancestryClass ? CLASS_INITIAL_PERICIA[state.profile.ancestryClass] : null;
 
     // Helper para criar as 5 esferas
     const createSpheres = (currentRank, key, isRadiant = false) => {
@@ -1246,6 +1322,7 @@ const App = (() => {
       for (let i = 1; i <= 5; i++) {
         const isActive = i <= currentRank;
         const isLocked = i > maxRank;
+        const isFixed = !isRadiant && (key === initialClassKey) && (i === 1);
         spheresHtml += `
           <div class="sphere-btn ${isActive ? 'active' : ''} ${isLocked ? 'locked' : ''}" 
                data-idx="${i}" 
@@ -1320,8 +1397,12 @@ const App = (() => {
         }
 
         const currentVal = isRadiant ? (state.radiantPericias[key] || 0) : (state.pericias[key] || 0);
-        // Se clicar na esfera que já é o rank atual, ele "desupa" para o rank anterior
         const newVal = (currentVal === idx) ? idx - 1 : idx;
+
+        if (!isRadiant && key === initialClassKey && newVal < 1) {
+          notify(`O 1º Rank de ${CosData.PERICIAS[key].name} é fixo pela sua Trilha Inicial (${state.profile.initialClass}).`);
+          return;
+        }
 
         // Cálculo de custo (diferença de pontos)
         const cost = newVal - currentVal;
