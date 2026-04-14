@@ -1756,8 +1756,61 @@ const App = (() => {
   }
 
   // ---- SAVE / LOAD ----
-  function saveProfile() {
-    const data = {
+  // ---- MULTI-SLOT SAVE SYSTEM ----
+  const SAVES_KEY = 'cosmere_rpg_saves_v2';
+  const MAX_SAVES = 20;
+
+  function getSaves() {
+    try {
+      const raw = localStorage.getItem(SAVES_KEY);
+      const saves = raw ? JSON.parse(raw) : [];
+
+      // Migra save antigo (chave legada) se existir e não houver saves novos ainda
+      if (saves.length === 0) {
+        const legacy = localStorage.getItem('cosmere_rpg_profile');
+        if (legacy) {
+          const data = JSON.parse(legacy);
+          const migrated = {
+            id: Date.now(),
+            savedAt: new Date().toISOString(),
+            summary: buildSaveSummary(data),
+            ...data,
+          };
+          saves.push(migrated);
+          localStorage.setItem(SAVES_KEY, JSON.stringify(saves));
+          localStorage.removeItem('cosmere_rpg_profile');
+        }
+      }
+
+      return saves;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function writeSaves(saves) {
+    localStorage.setItem(SAVES_KEY, JSON.stringify(saves));
+  }
+
+  function buildSaveSummary(data) {
+    const p = data.profile || {};
+    const unlockedIds = data.unlockedSkills || [];
+    const allSkills = [...CosData.SKILLS, ...CosData.RADIANT_SKILLS];
+    const classes = [...new Set(
+      unlockedIds.map(id => { const s = allSkills.find(sk => sk.id === id); return s ? s.cls : null; })
+        .filter(c => c && CosData.CLASSES.includes(c))
+    )];
+    return {
+      name: p.name || 'Sem Nome',
+      level: p.level || 1,
+      race: p.race || 'human',
+      radiantClass: p.radiantClass || null,
+      classes,
+    };
+  }
+
+  function buildCurrentSaveData() {
+    return {
       profile: state.profile,
       attributes: state.attributes,
       pericias: state.pericias,
@@ -1768,32 +1821,141 @@ const App = (() => {
       spentTalents: state.spentTalents,
       activeClass: state.activeClass,
     };
-    localStorage.setItem('cosmere_rpg_profile', JSON.stringify(data));
-    notify('Perfil salvo!');
   }
 
-  function loadProfile() {
-    const raw = localStorage.getItem('cosmere_rpg_profile');
-    if (!raw) { notify('Nenhum perfil salvo encontrado'); return; }
-    try {
-      const data = JSON.parse(raw);
-      state.profile = { ...state.profile, radiantClassLocked: false, ancestryClass: null, ...data.profile };
-      state.attributes = { ...state.attributes, ...data.attributes };
-      state.pericias = { ...state.pericias, ...data.pericias };
-      state.radiantPericias = { ...state.radiantPericias, ...data.radiantPericias };
-      state.unlockedSkills = new Set(data.unlockedSkills || []);
-      state.freeUnlockedSkills = new Set(data.freeUnlockedSkills || []);
-      state.singerFreeIds = new Set(data.singerFreeIds || []);
-      state.spentTalents = data.spentTalents || 0;
-      state.activeClass = data.activeClass || '_all';
+  function applySaveData(data) {
+    state.profile = { ...state.profile, radiantClassLocked: false, ancestryClass: null, ...data.profile };
+    state.attributes = { ...state.attributes, ...data.attributes };
+    state.pericias = { ...state.pericias, ...data.pericias };
+    state.radiantPericias = { ...state.radiantPericias, ...data.radiantPericias };
+    state.unlockedSkills = new Set(data.unlockedSkills || []);
+    state.freeUnlockedSkills = new Set(data.freeUnlockedSkills || []);
+    state.singerFreeIds = new Set(data.singerFreeIds || []);
+    state.spentTalents = data.spentTalents || 0;
+    state.activeClass = data.activeClass || '_all';
+    renderSidebar();
+    renderClassTabs();
+    rebuildTree();
+  }
 
-      renderSidebar();
-      renderClassTabs();
-      rebuildTree();
-      notify('Perfil carregado!');
-    } catch (e) {
-      notify('Erro ao carregar perfil');
-    }
+  function formatSaveDate(isoStr) {
+    try {
+      const d = new Date(isoStr);
+      return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    } catch (e) { return ''; }
+  }
+
+  // ---- SAVES MODAL ----
+  function showSavesModal() {
+    const modal = document.getElementById('saves-modal');
+    if (!modal) return;
+    renderSavesModal();
+    modal.classList.add('visible');
+  }
+
+  function hideSavesModal() {
+    const modal = document.getElementById('saves-modal');
+    if (modal) modal.classList.remove('visible');
+  }
+
+  function renderSavesModal() {
+    const modal = document.getElementById('saves-modal');
+    if (!modal) return;
+    const saves = getSaves();
+
+    const slotsHTML = saves.length === 0
+      ? `<div class="sm-empty">Nenhum save encontrado.</div>`
+      : saves.slice().reverse().map(sv => {
+          const s = sv.summary || {};
+          const nameTxt = s.name || 'Sem Nome';
+          const lvlTxt = `Nível ${s.level || 1}`;
+          const raceTxt = s.race === 'singer' ? 'Cantor' : 'Humano';
+          const classTxt = [
+            ...(s.classes || []),
+            ...(s.radiantClass ? [s.radiantClass] : []),
+          ].join(' · ') || '—';
+          const dateTxt = formatSaveDate(sv.savedAt);
+          return `
+            <div class="sm-slot" data-id="${sv.id}">
+              <div class="sm-slot-info">
+                <div class="sm-slot-name">${nameTxt}</div>
+                <div class="sm-slot-meta">${lvlTxt} · ${raceTxt} · ${classTxt}</div>
+                <div class="sm-slot-date">${dateTxt}</div>
+              </div>
+              <div class="sm-slot-actions">
+                <button class="btn primary sm-load-btn" data-id="${sv.id}">Carregar</button>
+                <button class="btn danger sm-del-btn" data-id="${sv.id}" title="Excluir">✕</button>
+              </div>
+            </div>`;
+        }).join('');
+
+    modal.innerHTML = `
+      <div class="sm-backdrop"></div>
+      <div class="sm-content">
+        <div class="sm-header">
+          <span class="sm-title">Saves</span>
+          <button class="sm-close" id="sm-close-btn">&times;</button>
+        </div>
+        <div class="sm-body">
+          <div class="sm-save-btn-row">
+            <button class="btn primary" id="sm-save-current">Salvar Personagem Atual</button>
+          </div>
+          ${slotsHTML}
+          <div class="sm-notice">
+            <strong>⚠ Atenção:</strong> Os saves ficam apenas no cache do navegador (localStorage).
+            Limpar o histórico ou os dados do site <strong>apagará todos os saves permanentemente</strong>.
+            Use "Exportar Ficha PDF" para guardar uma cópia segura.
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Fechar
+    modal.querySelector('#sm-close-btn')?.addEventListener('click', hideSavesModal);
+    modal.querySelector('.sm-backdrop')?.addEventListener('click', hideSavesModal);
+
+    // Salvar atual
+    modal.querySelector('#sm-save-current')?.addEventListener('click', () => {
+      const saves = getSaves();
+      if (saves.length >= MAX_SAVES) {
+        notify(`Limite de ${MAX_SAVES} saves atingido. Exclua um para continuar.`);
+        return;
+      }
+      const data = buildCurrentSaveData();
+      const entry = {
+        id: Date.now(),
+        savedAt: new Date().toISOString(),
+        summary: buildSaveSummary(data),
+        ...data,
+      };
+      saves.push(entry);
+      writeSaves(saves);
+      notify('Personagem salvo!');
+      renderSavesModal();
+    });
+
+    // Carregar
+    modal.querySelectorAll('.sm-load-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = Number(btn.dataset.id);
+        const saves = getSaves();
+        const sv = saves.find(s => s.id === id);
+        if (!sv) { notify('Save não encontrado'); return; }
+        applySaveData(sv);
+        hideSavesModal();
+        notify(`${sv.summary?.name || 'Personagem'} carregado!`);
+      });
+    });
+
+    // Excluir
+    modal.querySelectorAll('.sm-del-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = Number(btn.dataset.id);
+        const saves = getSaves().filter(s => s.id !== id);
+        writeSaves(saves);
+        renderSavesModal();
+      });
+    });
   }
 
   function resetProfile() {
@@ -1813,60 +1975,195 @@ const App = (() => {
   }
 
   // ---- EXPORT / IMPORT (JSON FILE) ----
-  function exportProfile() {
-    const data = {
-      profile: state.profile,
-      attributes: state.attributes,
-      pericias: state.pericias,
-      radiantPericias: state.radiantPericias,
-      unlockedSkills: [...state.unlockedSkills],
-      freeUnlockedSkills: [...state.freeUnlockedSkills],
-      spentTalents: state.spentTalents,
-      activeClass: state.activeClass,
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `cosmere_${state.profile.name || 'personagem'}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-    notify('Perfil exportado!');
-  }
+  // ---- IMPORT FROM PDF ----
+  async function importFromPDF() {
+    if (typeof PDFLib === 'undefined') {
+      notify('pdf-lib não carregado. Abra via start.bat');
+      return;
+    }
 
-  function importProfile() {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.json';
-    input.addEventListener('change', e => {
+    input.accept = '.pdf';
+
+    input.addEventListener('change', async e => {
       const file = e.target.files[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = ev => {
-        try {
-          const data = JSON.parse(ev.target.result);
-          state.profile = { ...state.profile, radiantClassLocked: false, ...data.profile };
-          state.attributes = { ...state.attributes, ...data.attributes };
-          state.pericias = { ...state.pericias, ...data.pericias };
-          state.radiantPericias = { ...state.radiantPericias, ...data.radiantPericias };
-          state.unlockedSkills = new Set(data.unlockedSkills || []);
-          state.freeUnlockedSkills = new Set(data.freeUnlockedSkills || []);
-          state.spentTalents = data.spentTalents || 0;
-          state.activeClass = data.activeClass || '_all';
 
-          document.getElementById('char-name').value = state.profile.name;
-          document.querySelectorAll('.race-btn').forEach(b => {
-            b.classList.toggle('active', b.dataset.race === state.profile.race);
-          });
-          renderSidebar();
-          renderClassTabs();
-          rebuildTree();
-          notify('Perfil importado!');
-        } catch (err) {
-          notify('Arquivo invalido');
+      notify('Lendo ficha...');
+
+      try {
+        const { PDFDocument } = PDFLib;
+        const arrayBuffer = await file.arrayBuffer();
+        const pdfDoc = await PDFDocument.load(arrayBuffer);
+        const form = pdfDoc.getForm();
+
+        function getField(name) {
+          try { return form.getTextField(name).getText() || ''; }
+          catch(e) { return ''; }
         }
-      };
-      reader.readAsText(file);
+
+        function isChecked(name) {
+          try { return form.getCheckBox(name).isChecked(); }
+          catch(e) { return false; }
+        }
+
+        // --- Nome, Nível, Ancestralidade ---
+        const name = getField('Character Name.Page 1') || getField('Character Name.Page 2');
+        const levelRaw = parseInt(getField('Level.Page 1') || getField('Level.Page 2'));
+        const level = isNaN(levelRaw) ? 1 : Math.min(Math.max(levelRaw, 1), 30);
+        const ancestryStr = getField('Ancestry.Page 1') || getField('Ancestry.Page 2');
+        const race = ancestryStr.toLowerCase().includes('cantor') ? 'singer' : 'human';
+
+        // --- Atributos ---
+        const attributes = {
+          forca:       parseInt((getField('Strength.Page 1')  || getField('Strength.Page 2')).trim())  || 0,
+          velocidade:  parseInt((getField('Speed.Page 1')     || getField('Speed.Page 2')).trim())     || 0,
+          intelecto:   parseInt((getField('Intellect.Page 1') || getField('Intellect.Page 2')).trim()) || 0,
+          vontade:     parseInt((getField('Willpower.Page 1') || getField('Willpower.Page 2')).trim()) || 0,
+          consciencia: parseInt((getField('Awareness.Page 1') || getField('Awareness.Page 2')).trim()) || 0,
+          presenca:    parseInt((getField('Presence.Page 1')  || getField('Presence.Page 2')).trim())  || 0,
+        };
+
+        // --- Ranks de Perícia (contar checkboxes marcados por perícia) ---
+        const SKILL_RANK_BOXES = {
+          agilidade:       [7, 10, 6, 9, 8],
+          atletismo:       [12, 15, 11, 14, 13],
+          armamentoPesado: [17, 20, 16, 19, 18],
+          armamentoLeve:   [22, 25, 21, 24, 23],
+          furtividade:     [27, 30, 26, 29, 28],
+          ladroagem:       [32, 35, 31, 34, 33],
+          manufatura:      [42, 45, 41, 44, 43],
+          deducao:         [47, 50, 46, 49, 48],
+          disciplina:      [52, 55, 51, 54, 53],
+          intimidacao:     [57, 60, 56, 59, 58],
+          saber:           [62, 65, 61, 64, 63],
+          medicina:        [67, 70, 66, 69, 68],
+          dissimulacao:    [77, 80, 76, 79, 78],
+          intuicao:        [82, 85, 81, 84, 83],
+          lideranca:       [87, 90, 86, 89, 88],
+          percepcao:       [92, 95, 91, 94, 93],
+          persuasao:       [97, 100, 96, 99, 98],
+          sobrevivencia:   [102, 105, 101, 104, 103],
+        };
+
+        const pericias = {};
+        for (const key of Object.keys(CosData.PERICIAS)) pericias[key] = 0;
+        for (const [key, boxes] of Object.entries(SKILL_RANK_BOXES)) {
+          pericias[key] = boxes.filter(boxId => isChecked(`Rank Box ${boxId}`)).length;
+        }
+
+        // --- Classe Radiante e Trilha Inicial a partir do campo Paths ---
+        const pathsStr = getField('Paths.Page 1') || getField('Paths.Page 2');
+        const pathTokens = pathsStr.split(';').map(s => s.trim()).filter(Boolean);
+        let radiantClass = null;
+        let ancestryClass = null;
+        for (const token of pathTokens) {
+          if (CosData.RADIANT_CLASSES.includes(token) && !radiantClass) {
+            radiantClass = token;
+          } else if (CosData.CLASSES.includes(token) && !ancestryClass) {
+            ancestryClass = token;
+          }
+        }
+
+        // --- Ranks dos Surtos Radiantes (caixas das perícias customizadas) ---
+        const radiantPericias = {};
+        for (const key of Object.keys(CosData.PERICIAS_RADIANTES)) radiantPericias[key] = 0;
+        if (radiantClass) {
+          const activeSurges = CosData.RADIANT_CLASS_PERICIAS[radiantClass] || [];
+          const surgeBoxSlots = [
+            [37, 40, 36, 39, 38],
+            [72, 75, 71, 74, 73],
+            [107, 110, 106, 109, 108],
+          ];
+          activeSurges.forEach((surgeKey, i) => {
+            if (i >= surgeBoxSlots.length) return;
+            radiantPericias[surgeKey] = surgeBoxSlots[i].filter(b => isChecked(`Rank Box ${b}`)).length;
+          });
+        }
+
+        // --- Talentos a partir dos campos de texto ---
+        const talentsText = [
+          getField('Talents 1'),
+          getField('Talents 2'),
+          getField('Talents 3'),
+        ].join('\n');
+        const talentNames = talentsText.split('\n').map(s => s.trim()).filter(Boolean);
+
+        const allSkillsPool = [
+          ...CosData.SKILLS,
+          ...CosData.RADIANT_SKILLS,
+          ...CosData.ADDITIONAL_SKILLS,
+        ];
+
+        const unlockedSkills = new Set();
+        const freeUnlockedSkills = new Set();
+        const singerFreeIds = new Set();
+
+        // Habilidade gratuita do Cantor (Mudar Forma)
+        let singerFreeName = null;
+        if (race === 'singer') {
+          const mudaForma = CosData.ADDITIONAL_SKILLS.find(s => s.cls === 'Cantor' && s.name === 'Mudar Forma');
+          if (mudaForma) {
+            singerFreeName = mudaForma.name;
+            unlockedSkills.add(mudaForma.id);
+            singerFreeIds.add(mudaForma.id);
+          }
+        }
+
+        let spentTalents = 0;
+
+        for (const tName of talentNames) {
+          if (tName === singerFreeName) continue;
+
+          // Encontra todos os IDs com este nome (habilidades compartilhadas entre classes)
+          const matches = allSkillsPool.filter(s => s.name === tName);
+          if (matches.length === 0) continue;
+
+          for (const sk of matches) unlockedSkills.add(sk.id);
+
+          // Apenas 1 "gasto" por nome único; as cópias extras são auto-desbloqueadas (free)
+          spentTalents++;
+          for (let i = 1; i < matches.length; i++) {
+            freeUnlockedSkills.add(matches[i].id);
+          }
+        }
+
+        // --- Aplicar ao estado ---
+        state.profile = {
+          ...state.profile,
+          name,
+          level,
+          race,
+          radiantClass: radiantClass || null,
+          radiantClassLocked: !!radiantClass,
+          ancestryClass: ancestryClass || null,
+        };
+        state.attributes = attributes;
+        state.pericias = pericias;
+        state.radiantPericias = radiantPericias;
+        state.unlockedSkills = unlockedSkills;
+        state.freeUnlockedSkills = freeUnlockedSkills;
+        state.singerFreeIds = singerFreeIds;
+        state.spentTalents = spentTalents;
+        state.activeClass = '_all';
+
+        document.getElementById('char-name').value = state.profile.name;
+        document.querySelectorAll('.race-btn').forEach(b => {
+          b.classList.toggle('active', b.dataset.race === state.profile.race);
+        });
+        renderSidebar();
+        renderClassTabs();
+        rebuildTree();
+        hideProfileModal();
+        notify('Ficha importada!');
+
+      } catch (err) {
+        console.error('[Import PDF]', err);
+        notify('Erro ao ler PDF: ' + err.message);
+      }
     });
+
     input.click();
   }
 
@@ -1931,6 +2228,7 @@ const App = (() => {
         </div>
         <div class="pm-footer">
           ${canCancel ? '<button class="btn pm-cancel-btn" id="pm-cancel-btn">Cancelar</button>' : ''}
+          <button class="btn pm-import-btn" id="pm-import-btn">Importar PDF</button>
           <button class="btn primary pm-confirm-btn" id="pm-confirm-btn">
             ${isNew ? 'Criar Personagem' : 'Confirmar'}
           </button>
@@ -1968,6 +2266,11 @@ const App = (() => {
       }
       applyProfile(_profileDraft);
       hideProfileModal();
+    });
+
+    // Import PDF
+    document.getElementById('pm-import-btn')?.addEventListener('click', () => {
+      importFromPDF();
     });
 
     // Cancel / close
@@ -2109,12 +2412,9 @@ const App = (() => {
       }
     });
 
-    document.getElementById('btn-save')?.addEventListener('click', saveProfile);
-    document.getElementById('btn-load')?.addEventListener('click', loadProfile);
+    document.getElementById('btn-save')?.addEventListener('click', showSavesModal);
+    document.getElementById('btn-load')?.addEventListener('click', showSavesModal);
     document.getElementById('btn-reset')?.addEventListener('click', resetProfile);
-    document.getElementById('btn-export')?.addEventListener('click', exportProfile);
-    document.getElementById('btn-import')?.addEventListener('click', importProfile);
-
     // Radiant wheel close button + backdrop (Escape key)
     document.getElementById('radiant-wheel-close')?.addEventListener('click', hideRadiantWheel);
     document.getElementById('radiant-wheel')?.addEventListener('click', e => {
@@ -2146,11 +2446,11 @@ const App = (() => {
   };
 
   const _PDF_CLASS_ABBREV = {
-    'Agente':'AGE','Emissário':'EMI','Caçador':'CAÇ','Líder':'LÍD',
-    'Erudito':'ERU','Guerreiro':'GUE','Corredor dos Ventos':'CdV',
-    'Rompe-Céu':'R-C','Pulverizador':'PUL','Dançarino dos Precipícios':'DdP',
-    'Sentinela da Verdade':'SdV','Teceluz':'TEC','Alternauta':'ALT',
-    'Plasmador':'PLA','Guardião das Pedras':'GdP','Cantor':'CAN',
+    'Agente':'Agente','Emissário':'Emissário','Caçador':'Caçador','Líder':'Líder',
+    'Erudito':'Erudito','Guerreiro':'Guerreiro','Corredor dos Ventos':'Corre Ventos',
+    'Rompe-Céu':'Rompe céu','Pulverizador':'Pulverizador','Dançarino dos Precipícios':'Dançarino',
+    'Sentinela da Verdade':'Sentinela','Teceluz':'Teceluz','Alternauta':'Alternauta',
+    'Plasmador':'Plasmador','Guardião das Pedras':'Guardião','Cantor':'Cantor',
   };
   
 
