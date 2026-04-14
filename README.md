@@ -9,9 +9,11 @@ Um aplicativo web interativo desenvolvido para facilitar a criação e o gerenci
 
     Roda Radiante (Radiant Wheel): Interface dedicada para a escolha da sua Ordem Radiante.
 
-    Importação e Exportação (JSON): Salve o progresso do seu personagem localmente e carregue-o quando quiser usando arquivos JSON.
+    Salvar múltiplos personagens no cache do navegador: armazene até 20 personagens localmente via localStorage.
 
-    Exportação para PDF: Gere a ficha do seu personagem pronta para impressão ou uso digital.
+    Importação de PDF: carregue uma ficha a partir do PDF exportado pelo sistema, sem depender de JSON.
+
+    Exportação para PDF: gere a ficha do seu personagem pronta para impressão ou uso digital.
 
 🛠️ Tecnologias Utilizadas
 

@@ -1974,7 +1974,6 @@ const App = (() => {
     showProfileModal(false);
   }
 
-  // ---- EXPORT / IMPORT (JSON FILE) ----
   // ---- IMPORT FROM PDF ----
   async function importFromPDF() {
     if (typeof PDFLib === 'undefined') {
@@ -2414,6 +2413,7 @@ const App = (() => {
 
     document.getElementById('btn-save')?.addEventListener('click', showSavesModal);
     document.getElementById('btn-load')?.addEventListener('click', showSavesModal);
+    document.getElementById('btn-import-pdf')?.addEventListener('click', importFromPDF);
     document.getElementById('btn-reset')?.addEventListener('click', resetProfile);
     // Radiant wheel close button + backdrop (Escape key)
     document.getElementById('radiant-wheel-close')?.addEventListener('click', hideRadiantWheel);
