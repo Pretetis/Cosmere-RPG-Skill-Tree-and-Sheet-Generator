@@ -42,6 +42,70 @@ const PdfExport = (() => {
     'Plasmador':'Plasmador','Guardião das Pedras':'Guardião','Cantor':'Cantor',
   };
 
+  const _RADIANT_SVG_MAP = {
+    'Corredor dos Ventos':       'svg/Windrunners_glyph.svg',
+    'Rompe-Céu':                 'svg/Skybreakers_glyph.svg',
+    'Pulverizador':              'svg/Dustbringers_glyph.svg',
+    'Dançarino dos Precipícios': 'svg/Edgedancers_glyph.svg',
+    'Sentinela da Verdade':      'svg/Truthwatchers_glyph.svg',
+    'Teceluz':                   'svg/Lightweavers_glyph.svg',
+    'Alternauta':                'svg/elsecallers_glyph.svg',
+    'Plasmador':                 'svg/Willshapers_glyph.svg',
+    'Guardião das Pedras':       'svg/Stonewards_glyph.svg',
+    'Vinculadores':              'svg/Bondsmiths_glyph.svg',
+  };
+
+  // Helper: redimensiona um dataURL de imagem para maxSize × maxSize (JPEG comprimido)
+  // Retorna uma Promise<string> com o data URL reduzido
+  function _resizePortrait(dataUrl, maxSize = 220, quality = 0.7) {
+    return new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => {
+        const ratio  = Math.min(maxSize / img.width, maxSize / img.height, 1);
+        const w      = Math.max(1, Math.round(img.width  * ratio));
+        const h      = Math.max(1, Math.round(img.height * ratio));
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => resolve(null);
+      img.src = dataUrl;
+    });
+  }
+
+  // Helper: Carrega um SVG, pinta com source-in no Canvas e retorna um PNG (DataURL)
+  function _getTintedSvgPng(svgUrl, colorArr) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const size = 512;
+        const canvas = document.createElement('canvas');
+        canvas.width = size; 
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        
+        ctx.drawImage(img, 0, 0, size, size);
+        
+        if (colorArr) {
+          ctx.globalCompositeOperation = 'source-in';
+          const r = Math.round(colorArr[0] * 255);
+          const g = Math.round(colorArr[1] * 255);
+          const b = Math.round(colorArr[2] * 255);
+          ctx.fillStyle = `rgb(${r},${g},${b})`;
+          ctx.fillRect(0, 0, size, size);
+        }
+        
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.onerror = () => {
+        console.warn("[PDF Export] Falha ao carregar SVG:", svgUrl);
+        resolve(null);
+      };
+      img.src = svgUrl;
+    });
+  }
+
   // ---- GRÁFICO RADAR ----
 
   function _drawRadarPdf(page, cx, cy, R, labels, values, maxVal, cr, font, fontBold, title) {
@@ -97,7 +161,7 @@ const PdfExport = (() => {
 
   // ---- MAPA DE HABILIDADES ----
 
-  function _drawSkillMapPdf(page, cx, cy, mapR, _font, fontBold, state) {
+  function _drawSkillMapPdf(page, cx, cy, mapR, _font, fontBold, state, centerImage) {
     const { rgb } = PDFLib;
 
     const entries = [];
@@ -119,6 +183,17 @@ const PdfExport = (() => {
       page.drawEllipse({ x: cx, y: cy, xScale: mapR*f, yScale: mapR*f,
         borderColor: rgb(0.9, 0.9, 0.9), borderWidth: 0.6 });
     });
+
+    if (centerImage) {
+      const imgSize = mapR * 0.26; 
+      page.drawImage(centerImage, {
+        x: cx - imgSize / 2,
+        y: cy - imgSize / 2,
+        width: imgSize,
+        height: imgSize,
+        opacity: 0.7
+      });
+    }
 
     entries.forEach((_, idx) => {
       const a = Math.PI/2 - (2*Math.PI*idx/numE) + (Math.PI/numE);
@@ -270,10 +345,36 @@ const PdfExport = (() => {
     _drawRadarPdf(page, 447, chartCy, chartR, trackLabels, trackVals, 10,
       [0.83, 0.66, 0.33], font, fontBold, 'TRILHAS HERÓICAS');
 
+    // const mapAreaH = H - 210 - 22;
+    // const mapCy    = 22 + mapAreaH * 0.48;
+    // const mapR     = Math.min(W/2 - 35, mapAreaH/2 - 25);
+    // _drawSkillMapPdf(page, W/2, mapCy, mapR, font, fontBold, state);
     const mapAreaH = H - 210 - 22;
     const mapCy    = 22 + mapAreaH * 0.48;
     const mapR     = Math.min(W/2 - 35, mapAreaH/2 - 25);
-    _drawSkillMapPdf(page, W/2, mapCy, mapR, font, fontBold, state);
+    
+    const radiantClass = state.profile.radiantClass;
+    let svgUrl = 'svg/Cosmere_symbol.svg';
+    let centerColor = [0.83, 0.66, 0.33]; 
+
+    if (radiantClass && _RADIANT_SVG_MAP[radiantClass]) {
+      svgUrl = _RADIANT_SVG_MAP[radiantClass];
+      centerColor = _PDF_CLASS_COLORS[radiantClass] || centerColor;
+    }
+
+    // Processa a imagem para inserção no PDF-Lib
+    let centerImage = null;
+    try {
+      const pngDataUrl = await _getTintedSvgPng(svgUrl, centerColor);
+      if (pngDataUrl) {
+        centerImage = await pdfDoc.embedPng(pngDataUrl);
+      }
+    } catch (e) {
+      console.warn("Não foi possível processar o Símbolo Central pro PDF", e);
+    }
+
+    // Chama o construtor do mapa passando a centerImage processada
+    _drawSkillMapPdf(page, W/2, mapCy, mapR, font, fontBold, state, centerImage);
   }
 
   // ---- EXPORTAÇÃO PRINCIPAL ----
@@ -441,16 +542,65 @@ const PdfExport = (() => {
         });
       }
 
-      const allSkills    = [...CosData.SKILLS, ...CosData.RADIANT_SKILLS];
-      const talentNames  = [...state.unlockedSkills]
-        .map(id => { const s = allSkills.find(sk => sk.id === id); return s ? s.name : null; })
-        .filter(Boolean);
-      const uniqueTalents = [...new Set(talentNames)].sort();
+      // ---- TALENTOS — agrupados por classe, sem duplicatas ----
+      const allTalentPools = [
+        ...CosData.SKILLS,
+        ...(CosData.RADIANT_SKILLS || []),
+        ...(CosData.ADDITIONAL_SKILLS || []),
+      ];
+      const talentById = new Map(allTalentPools.map(s => [s.id, s]));
 
-      const chunk = 40;
-      setField('Talents 1', uniqueTalents.slice(0, chunk).join('\n'));
-      setField('Talents 2', uniqueTalents.slice(chunk, chunk * 2).join('\n'));
-      setField('Talents 3', uniqueTalents.slice(chunk * 2).join('\n'));
+      // Separa compras diretas (exclui auto-desbloqueadas compartilhadas e Cantor grátis)
+      const directTalents = [];
+      const seenTalentNames = new Map(); // name → winning skill (classe com mais compras diretas)
+      const talentClassCount = {};
+      for (const id of state.unlockedSkills) {
+        if (state.freeUnlockedSkills.has(id) || state.singerFreeIds.has(id)) continue;
+        const s = talentById.get(id);
+        if (s) {
+          talentClassCount[s.cls] = (talentClassCount[s.cls] || 0) + 1;
+          directTalents.push(s);
+        }
+      }
+      // Dedup por nome — mantém a classe com mais compras diretas
+      const talentGrouped = {};
+      for (const skill of directTalents) {
+        const prev = seenTalentNames.get(skill.name);
+        if (prev) {
+          if ((talentClassCount[skill.cls] || 0) > (talentClassCount[prev.cls] || 0)) {
+            const old = talentGrouped[prev.cls];
+            if (old) { const i = old.findIndex(s => s.name === skill.name); if (i >= 0) old.splice(i, 1); if (!old.length) delete talentGrouped[prev.cls]; }
+            seenTalentNames.set(skill.name, skill);
+            (talentGrouped[skill.cls] = talentGrouped[skill.cls] || []).push(skill);
+          }
+        } else {
+          seenTalentNames.set(skill.name, skill);
+          (talentGrouped[skill.cls] = talentGrouped[skill.cls] || []).push(skill);
+        }
+      }
+      // Ordem das classes: mundanas → radiantes → adicionais
+      const allClassOrder = [...(CosData.CLASSES || []), ...(CosData.RADIANT_CLASSES || [])];
+      const talentClasses = Object.keys(talentGrouped).sort((a, b) => {
+        const ia = allClassOrder.indexOf(a), ib = allClassOrder.indexOf(b);
+        if (ia >= 0 && ib >= 0) return ia - ib;
+        if (ia >= 0) return -1; if (ib >= 0) return 1;
+        return a.localeCompare(b);
+      });
+      // Monta blocos de texto por classe
+      const talentLines = [];
+      for (const cls of talentClasses) {
+        const skills = talentGrouped[cls];
+        if (!skills || !skills.length) continue;
+        talentLines.push(`${cls}:`);
+        for (const s of skills.sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name))) {
+          talentLines.push(`  R${s.rank} ${s.name}`);
+        }
+      }
+      // Divide as linhas entre Talents 1 e Talents 2 (Talents 3 não é usado)
+      const half = Math.ceil(talentLines.length / 2);
+      setField('Talents 1', talentLines.slice(0, half).join('\n'));
+      setField('Talents 2', talentLines.slice(half).join('\n'));
+      setField('Talents 3', ''); // limpa o campo mas não o usa
 
       setField('Health Maximum',    '    '+String(stats.maxHealth));
       setField('Focus Maximum',     '    '+String(stats.maxFocus));
@@ -459,6 +609,55 @@ const PdfExport = (() => {
       setField('Senses Range',      '        '+stats.senses, 14);
       setField('Movement',          '   '+stats.movement, 14);
       setField('Lifting Capacity',  '   '+stats.lifting, 14);
+
+      // ---- RETRATO DO PERSONAGEM ----
+      if (p.portrait) {
+        try {
+          // 1) Armazena versão comprimida nos metadados do PDF para roundtrip no import
+          //    (NÃO escreve no campo de texto para não poluir a ficha visualmente)
+          const smallPortrait = await _resizePortrait(p.portrait, 220, 0.7);
+          if (smallPortrait) {
+            // Usa o campo Creator como transporte — prefixo distingue do valor original
+            pdfDoc.setCreator('cosmere-rpg|portrait:' + smallPortrait);
+          }
+
+          // 2) Desenha a imagem em tamanho original sobre a área do campo Character Appearance
+          const appearanceField = form.getTextField('Character Appearance');
+          const widgets = appearanceField.acroField.getWidgets();
+          if (widgets.length > 0) {
+            const rect     = widgets[0].getRectangle();
+            const isJpeg   = p.portrait.startsWith('data:image/jpeg') ||
+                             p.portrait.startsWith('data:image/jpg');
+            const b64      = p.portrait.split(',')[1];
+            const binStr   = atob(b64);
+            const imgBytes = new Uint8Array(binStr.length);
+            for (let i = 0; i < binStr.length; i++) imgBytes[i] = binStr.charCodeAt(i);
+            const embeddedImg = isJpeg
+              ? await pdfDoc.embedJpg(imgBytes)
+              : await pdfDoc.embedPng(imgBytes);
+
+            const imgDims = embeddedImg.scaleToFit(rect.width, rect.height);
+            const offsetX = (rect.width  - imgDims.width)  / 2;
+            const offsetY = (rect.height - imgDims.height) / 2;
+
+            const pageIndex = (() => {
+              try {
+                const pRef = widgets[0].P();
+                if (pRef) return pdfDoc.getPages().findIndex(pg => pg.ref === pRef);
+              } catch (_) {}
+              return 0;
+            })();
+            pdfDoc.getPage(Math.max(0, pageIndex)).drawImage(embeddedImg, {
+              x:      rect.x + offsetX,
+              y:      rect.y + offsetY,
+              width:  imgDims.width,
+              height: imgDims.height,
+            });
+          }
+        } catch (portraitErr) {
+          console.warn('[Sheet] Não foi possível inserir o retrato:', portraitErr);
+        }
+      }
 
       await addVisualPage(pdfDoc, state);
 

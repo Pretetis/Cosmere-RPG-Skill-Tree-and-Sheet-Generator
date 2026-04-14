@@ -50,7 +50,28 @@ const SavesManager = (() => {
   }
 
   function writeSaves(saves) {
-    localStorage.setItem(SAVES_KEY, JSON.stringify(saves));
+    try {
+      localStorage.setItem(SAVES_KEY, JSON.stringify(saves));
+      return true;
+    } catch (e) {
+      // Se falhou por quota (imagem muito grande), tenta salvar sem o retrato
+      if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
+        const trimmed = saves.map(sv => {
+          if (!sv.profile?.portrait) return sv;
+          return { ...sv, profile: { ...sv.profile, portrait: null } };
+        });
+        try {
+          localStorage.setItem(SAVES_KEY, JSON.stringify(trimmed));
+          if (_notify) _notify('Save criado (imagem de aparência omitida — muito grande para o cache)');
+          return true;
+        } catch (e2) {
+          if (_notify) _notify('Erro ao salvar: cache cheio. Exclua saves antigos.');
+          return false;
+        }
+      }
+      if (_notify) _notify('Erro ao salvar: ' + e.message);
+      return false;
+    }
   }
 
   function buildSaveSummary(data) {
@@ -119,6 +140,7 @@ const SavesManager = (() => {
               </div>
               <div class="sm-slot-actions">
                 <button class="btn primary sm-load-btn" data-id="${sv.id}">Carregar</button>
+                <button class="btn sm-replace-btn" data-id="${sv.id}" title="Substituir com o personagem atual">Substituir</button>
                 <button class="btn danger sm-del-btn" data-id="${sv.id}" title="Excluir">✕</button>
               </div>
             </div>`;
@@ -176,6 +198,27 @@ const SavesManager = (() => {
         _applyState(sv);
         hideSavesModal();
         _notify(`${sv.summary?.name || 'Personagem'} carregado!`);
+      });
+    });
+
+    modal.querySelectorAll('.sm-replace-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id     = Number(btn.dataset.id);
+        const saves  = getSaves();
+        const idx    = saves.findIndex(s => s.id === id);
+        if (idx < 0) { _notify('Save não encontrado'); return; }
+        const sv     = saves[idx];
+        const label  = sv.summary?.name || 'este save';
+        if (!confirm(`Substituir "${label}" pelo personagem atual?\nEsta ação não pode ser desfeita.`)) return;
+        const data   = _getSerializedState();
+        saves[idx]   = {
+          id:      sv.id,          // mantém o mesmo id para preservar a posição
+          savedAt: new Date().toISOString(),
+          summary: buildSaveSummary(data),
+          ...data,
+        };
+        if (writeSaves(saves)) _notify('Save substituído!');
+        renderSavesModal();
       });
     });
 

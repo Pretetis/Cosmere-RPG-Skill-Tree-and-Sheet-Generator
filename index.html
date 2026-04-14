@@ -26,6 +26,82 @@
   <!-- Saves Modal -->
   <div id="saves-modal"></div>
 
+  <!-- Credits Modal -->
+  <div id="credits-modal" class="credits-modal-overlay">
+    <div class="credits-modal-box">
+      <div class="credits-modal-header">
+        <span class="credits-modal-title">Créditos &amp; Sobre</span>
+        <button class="credits-modal-close" id="credits-modal-close">&times;</button>
+      </div>
+      <div class="credits-modal-body">
+
+        <div class="credits-badge">Fan-Made &mdash; Não Oficial</div>
+
+        <div class="credits-section">
+          <div class="credits-section-title">Jogo &amp; Universo</div>
+          <div class="credits-item">
+            <span class="credits-label">Cosmere RPG</span>
+            <span class="credits-value">Brotherwise Games</span>
+          </div>
+          <div class="credits-item">
+            <span class="credits-label">Universo Cosmere</span>
+            <span class="credits-value">Brandon Sanderson &amp; Dragonsteel Entertainment</span>
+          </div>
+        </div>
+
+        <div class="credits-section">
+          <div class="credits-section-title">Arte &amp; Assets</div>
+          <div class="credits-item">
+            <span class="credits-label">Glifos das Ordens &amp; Surges</span>
+            <span class="credits-value">Comunidade Cosmere — via Coppermind Wiki (CC BY-SA)</span>
+          </div>
+          <div class="credits-item">
+            <span class="credits-label">Símbolo do Cosmere</span>
+            <span class="credits-value">Comunidade Cosmere — via Coppermind Wiki (CC BY-SA)</span>
+          </div>
+          <!-- <div class="credits-item">
+            <span class="credits-label">Ilustração Humano</span>
+            <span class="credits-value">A preencher</span>
+          </div> -->
+        </div>
+
+        <div class="credits-section">
+          <div class="credits-section-title">Tecnologia</div>
+          <div class="credits-item">
+            <span class="credits-label">Renderização 3D</span>
+            <span class="credits-value">Three.js r152</span>
+          </div>
+          <div class="credits-item">
+            <span class="credits-label">Geração de PDF</span>
+            <span class="credits-value">pdf-lib v1.17</span>
+          </div>
+          <div class="credits-item">
+            <span class="credits-label">Tipografia</span>
+            <span class="credits-value">Cinzel &amp; Inter — Google Fonts</span>
+          </div>
+        </div>
+
+        <div class="credits-section">
+          <div class="credits-section-title">Desenvolvimento</div>
+          <div class="credits-item">
+            <span class="credits-label">Projeto</span>
+            <span class="credits-value">Pretetis</span>
+          </div>
+          <div class="credits-item">
+            <span class="credits-label">Assistência de IA</span>
+            <span class="credits-value">Claude (Anthropic); Gemini (Google)</span>
+          </div>
+        </div>
+
+        <div class="credits-disclaimer">
+          Este é um projeto <strong>fan-made não oficial</strong>. Não afiliado à Brotherwise Games,
+          Dragonsteel Entertainment ou Brandon Sanderson. Criado para uso pessoal e fins educativos.
+        </div>
+
+      </div>
+    </div>
+  </div>
+
   <!-- Radiant Wheel Overlay -->
   <div id="radiant-wheel">
     <button class="radiant-wheel-close" id="radiant-wheel-close">&times;</button>
@@ -72,14 +148,29 @@
       <!-- Character -->
       <div class="sidebar-section">
         <h2>Personagem</h2>
-        <div class="profile-row">
-          <label>Nome</label>
-          <input type="text" id="char-name" placeholder="Nome do personagem">
-        </div>
-        <div class="profile-row profile-row-race">
-          <label>Ancestralidade</label>
-          <span id="char-race-display" class="race-display">Humano</span>
-          <button class="btn race-edit-btn" id="btn-edit-profile" title="Editar perfil">&#9998;</button>
+        <div class="character-header-row">
+          <div class="char-portrait-wrap">
+            <div id="char-portrait" class="char-portrait" title="Clique para adicionar uma imagem">
+              <svg class="char-portrait-placeholder" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="20" cy="15" r="7" stroke="currentColor" stroke-width="1.5" fill="none" opacity="0.4"/>
+                <path d="M6 36c0-7.732 6.268-14 14-14s14 6.268 14 14" stroke="currentColor" stroke-width="1.5" fill="none" opacity="0.4"/>
+              </svg>
+              <div class="char-portrait-hint">Aparência</div>
+            </div>
+            <input type="file" id="char-portrait-input" accept="image/*" style="display:none;">
+            <button class="char-portrait-clear" id="char-portrait-clear" title="Remover imagem" style="display:none;">&times;</button>
+          </div>
+          <div class="char-info-col">
+            <div class="profile-row">
+              <label>Nome</label>
+              <input type="text" id="char-name" placeholder="Nome do personagem">
+            </div>
+            <div class="profile-row profile-row-race">
+              <label>Ancestralidade</label>
+              <span id="char-race-display" class="race-display">Humano</span>
+              <button class="btn race-edit-btn" id="btn-edit-profile" title="Editar perfil">&#9998;</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -113,6 +204,15 @@
         <div class="pericias-grid" id="pericias-grid"></div>
       </div>
 
+      <!-- Talentos -->
+      <div class="sidebar-section sidebar-section--collapsible collapsed" id="talents-section">
+        <h2 class="collapsible-header" id="talents-toggle">
+          Talentos
+          <span class="collapse-arrow">&#9660;</span>
+        </h2>
+        <div id="talents-list" class="collapsible-body"></div>
+      </div>
+
       <!-- Radiant -->
       <div class="sidebar-section">
         <h2>Ordem Radiante</h2>
@@ -127,8 +227,11 @@
           <button class="btn danger" id="btn-reset">Reset</button>
         </div>
         <div class="save-load-row" style="margin-top: 8px; gap: 8px; display: flex;">
-          <button class="btn primary" id="btn-sheet" style="flex:1;" onclick="App.exportToSheet()">Exportar Ficha PDF</button>
           <button class="btn" id="btn-import-pdf" style="flex:1;" type="button">Importar Ficha PDF</button>
+          <button class="btn primary" id="btn-sheet" style="flex:1;" onclick="App.exportToSheet()">Exportar Ficha PDF</button>
+        </div>
+        <div class="credits-link-row">
+          <button class="btn-credits-link" id="btn-credits">Créditos &amp; Sobre</button>
         </div>
       </div>
 

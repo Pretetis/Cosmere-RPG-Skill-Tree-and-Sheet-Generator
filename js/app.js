@@ -683,6 +683,8 @@ const App = (() => {
     renderPericias();
     renderLevelDisplay();
     renderRadiantSection();
+    renderTalents();
+    renderPortrait();
     // Update race display label in sidebar
     const raceLabel = document.getElementById('char-race-display');
     if (raceLabel) {
@@ -692,6 +694,149 @@ const App = (() => {
     const nameInput = document.getElementById('char-name');
     if (nameInput && nameInput.value !== state.profile.name) {
       nameInput.value = state.profile.name;
+    }
+  }
+
+  // ---- RENDER TALENTS ----
+  function renderTalents() {
+    const container = document.getElementById('talents-list');
+    if (!container) return;
+
+    // Collect all unlocked skills with metadata
+    const allPools = [
+      { pool: CosData.SKILLS,            type: 'mundane'   },
+      { pool: CosData.RADIANT_SKILLS,    type: 'radiant'   },
+      { pool: CosData.ADDITIONAL_SKILLS, type: 'additional'},
+    ];
+
+    // Map id → skill object for fast lookup
+    const byId = new Map();
+    for (const { pool } of allPools) {
+      for (const s of pool) byId.set(s.id, s);
+    }
+
+    // Collect "direct" unlocks (user purchased — not auto-unlocked by shared-name or singer logic)
+    const directSkills = [];
+    for (const id of state.unlockedSkills) {
+      if (state.freeUnlockedSkills.has(id)) continue;
+      if (state.singerFreeIds.has(id)) continue;
+      const skill = byId.get(id);
+      if (skill) directSkills.push(skill);
+    }
+
+    // Count direct purchases per class (to resolve ties when an old save lacks freeUnlockedSkills)
+    const classDirectCount = {};
+    for (const sk of directSkills) {
+      classDirectCount[sk.cls] = (classDirectCount[sk.cls] || 0) + 1;
+    }
+
+    // Deduplicate by name: keep the copy from the class with the most direct purchases.
+    // This correctly handles old saves / edge cases where freeUnlockedSkills is incomplete.
+    const seenNames = new Map(); // name → winning skill
+    const grouped = {};         // cls → [skill]
+
+    for (const skill of directSkills) {
+      const prev = seenNames.get(skill.name);
+      if (prev) {
+        const prevCount = classDirectCount[prev.cls] || 0;
+        const newCount  = classDirectCount[skill.cls] || 0;
+        if (newCount > prevCount) {
+          // Replace: remove prev entry, add new one
+          const oldArr = grouped[prev.cls];
+          if (oldArr) {
+            const idx = oldArr.findIndex(s => s.name === skill.name);
+            if (idx >= 0) oldArr.splice(idx, 1);
+            if (oldArr.length === 0) delete grouped[prev.cls];
+          }
+          seenNames.set(skill.name, skill);
+          if (!grouped[skill.cls]) grouped[skill.cls] = [];
+          grouped[skill.cls].push(skill);
+        }
+        // else keep prev winner (do nothing)
+      } else {
+        seenNames.set(skill.name, skill);
+        if (!grouped[skill.cls]) grouped[skill.cls] = [];
+        grouped[skill.cls].push(skill);
+      }
+    }
+
+    const classes = Object.keys(grouped);
+
+    if (classes.length === 0) {
+      container.innerHTML = `<div class="talents-empty">Nenhum talento desbloqueado</div>`;
+      return;
+    }
+
+    // Sort classes: mundane first (alphabetical), then radiantes, then additional
+    const mundaneClasses   = CosData.CLASSES || [];
+    const radiantClasses   = CosData.RADIANT_CLASSES || [];
+
+    classes.sort((a, b) => {
+      const ia = mundaneClasses.indexOf(a);
+      const ib = mundaneClasses.indexOf(b);
+      if (ia >= 0 && ib >= 0) return ia - ib;
+      if (ia >= 0) return -1;
+      if (ib >= 0) return 1;
+      const ra = radiantClasses.indexOf(a);
+      const rb = radiantClasses.indexOf(b);
+      if (ra >= 0 && rb >= 0) return ra - rb;
+      if (ra >= 0) return -1;
+      if (rb >= 0) return 1;
+      return a.localeCompare(b);
+    });
+
+    let html = '';
+    for (const cls of classes) {
+      const skills = grouped[cls];
+      const clr = clsColor(cls);
+      html += `
+        <div class="talents-group">
+          <div class="talents-group-header" style="color:${clr}">
+            <span class="talents-group-dot" style="background:${clr}"></span>
+            ${cls}
+            <span class="talents-group-count">${skills.length}</span>
+          </div>
+          <ul class="talents-group-list">
+            ${skills.map(s => `
+              <li class="talent-item">
+                <span class="talent-rank">R${s.rank}</span>
+                <span class="talent-name">${s.name}</span>
+              </li>`).join('')}
+          </ul>
+        </div>`;
+    }
+    container.innerHTML = html;
+  }
+
+  // ---- RENDER PORTRAIT ----
+  function renderPortrait() {
+    const wrap = document.getElementById('char-portrait');
+    const clearBtn = document.getElementById('char-portrait-clear');
+    if (!wrap) return;
+    const portrait = state.profile.portrait || null;
+    if (portrait) {
+      // Show image
+      let img = wrap.querySelector('img.char-portrait-img');
+      if (!img) {
+        wrap.innerHTML = '';
+        img = document.createElement('img');
+        img.className = 'char-portrait-img';
+        wrap.appendChild(img);
+      }
+      if (img.src !== portrait) img.src = portrait;
+      if (clearBtn) clearBtn.style.display = 'block';
+    } else {
+      // Show placeholder
+      const hasPlaceholder = wrap.querySelector('.char-portrait-placeholder');
+      if (!hasPlaceholder) {
+        wrap.innerHTML = `
+          <svg class="char-portrait-placeholder" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="20" cy="15" r="7" stroke="currentColor" stroke-width="1.5" fill="none" opacity="0.4"/>
+            <path d="M6 36c0-7.732 6.268-14 14-14s14 6.268 14 14" stroke="currentColor" stroke-width="1.5" fill="none" opacity="0.4"/>
+          </svg>
+          <div class="char-portrait-hint">Aparência</div>`;
+      }
+      if (clearBtn) clearBtn.style.display = 'none';
     }
   }
 
@@ -1456,6 +1601,8 @@ const App = (() => {
     // Classes base
     'Agente': '#4ade80', 'Emissário': '#facc15', 'Caçador': '#f87171',
     'Líder': '#60a5fa', 'Erudito': '#a78bfa', 'Guerreiro': '#fb923c',
+    // Ancestralidade adicional
+    'Cantor': '#e07b54',
     // Ordens Radiantes
     'Corredor dos Ventos':       '#38bdf8',
     'Rompe-Céu':                 '#fbbf24',
@@ -1709,7 +1856,12 @@ const App = (() => {
           getField('Talents 2'),
           getField('Talents 3'),
         ].join('\n');
-        const talentNames = talentsText.split('\n').map(s => s.trim()).filter(Boolean);
+        const talentNames = talentsText
+          .split('\n')
+          .map(s => s.trim())
+          .filter(Boolean)
+          .filter(s => !s.endsWith(':'))          // ignora cabeçalhos de classe ("Guerreiro:")
+          .map(s => s.replace(/^R\d+\s+/, ''));   // remove prefixo de rank ("R0 ", "R3 ", …)
 
         const allSkillsPool = [
           ...CosData.SKILLS,
@@ -1750,6 +1902,14 @@ const App = (() => {
           }
         }
 
+        // --- Retrato do personagem (gravado nos metadados Creator do PDF) ---
+        let portrait = null;
+        try {
+          const creatorRaw = pdfDoc.getCreator() || '';
+          const portraitMatch = creatorRaw.match(/^cosmere-rpg\|portrait:(data:image\/.+)/s);
+          if (portraitMatch) portrait = portraitMatch[1];
+        } catch (e) { /* sem retrato */ }
+
         // --- Aplicar ao estado ---
         state.profile = {
           ...state.profile,
@@ -1759,6 +1919,7 @@ const App = (() => {
           radiantClass: radiantClass || null,
           radiantClassLocked: !!radiantClass,
           ancestryClass: ancestryClass || null,
+          portrait,
         };
         state.attributes = attributes;
         state.pericias = pericias;
@@ -1825,7 +1986,7 @@ const App = (() => {
 
               <div class="pm-race-card ${_profileDraft.race === 'human' ? 'active' : ''}" data-race="human">
                 <div class="pm-race-img">
-                  <span class="pm-race-img-placeholder">&#9654;</span>
+                  <img src="assets/human.png" alt="Humano">
                 </div>
                 <div class="pm-race-name">Humano</div>
                 <div class="pm-race-desc">
@@ -1834,7 +1995,7 @@ const App = (() => {
               </div>
 
               <div class="pm-race-card ${_profileDraft.race === 'singer' ? 'active' : ''}" data-race="singer">
-                <div class="pm-race-img">
+                <div class="pm-race-img pm-race-img--singer">
                   <span class="pm-race-img-placeholder">&#9670;</span>
                 </div>
                 <div class="pm-race-name">Cantor</div>
@@ -2013,6 +2174,46 @@ const App = (() => {
       showProfileModal(true);
     });
 
+    // Portrait upload
+    const portraitWrap  = document.getElementById('char-portrait');
+    const portraitInput = document.getElementById('char-portrait-input');
+    const portraitClear = document.getElementById('char-portrait-clear');
+
+    portraitWrap?.addEventListener('click', () => portraitInput?.click());
+
+    portraitInput?.addEventListener('change', e => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        // Redimensiona para max 400px antes de armazenar (economiza espaço no localStorage)
+        const img = new Image();
+        img.onload = () => {
+          const MAX = 400;
+          let w = img.naturalWidth, h = img.naturalHeight;
+          if (w > MAX || h > MAX) {
+            if (w >= h) { h = Math.round(h * MAX / w); w = MAX; }
+            else        { w = Math.round(w * MAX / h); h = MAX; }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          state.profile.portrait = canvas.toDataURL('image/jpeg', 0.8);
+          renderPortrait();
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+      // Reset input so same file can be re-selected
+      portraitInput.value = '';
+    });
+
+    portraitClear?.addEventListener('click', e => {
+      e.stopPropagation(); // não abre o file picker
+      state.profile.portrait = null;
+      renderPortrait();
+    });
+
     function toggleSidebar() {
       document.getElementById('sidebar').classList.toggle('closed');
       document.getElementById('viewport').classList.toggle('expanded');
@@ -2022,6 +2223,28 @@ const App = (() => {
 
     document.getElementById('sidebar-toggle')?.addEventListener('click', toggleSidebar);
     document.getElementById('sidebar-reopen')?.addEventListener('click', toggleSidebar);
+
+    // Collapsible talents section
+    document.getElementById('talents-toggle')?.addEventListener('click', () => {
+      document.getElementById('talents-section')?.classList.toggle('collapsed');
+    });
+
+    // Credits modal
+    const creditsOverlay = document.getElementById('credits-modal');
+    document.getElementById('btn-credits')?.addEventListener('click', () => {
+      creditsOverlay?.classList.add('visible');
+    });
+    document.getElementById('credits-modal-close')?.addEventListener('click', () => {
+      creditsOverlay?.classList.remove('visible');
+    });
+    creditsOverlay?.addEventListener('click', e => {
+      if (e.target === creditsOverlay) creditsOverlay.classList.remove('visible');
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && creditsOverlay?.classList.contains('visible')) {
+        creditsOverlay.classList.remove('visible');
+      }
+    });
 
     document.getElementById('lvl-up')?.addEventListener('click', () => {
       // Bloqueia o up se houver pontos pendentes (Mantivemos a sua regra de segurança!)
