@@ -18,14 +18,15 @@ const SkillRenderer = (() => {
   let animFrame = null;
 
   // callbacks
-  let onNodeHover = null;
-  let onNodeClick = null;
-  let onHoverEnd  = null;
+  let onNodeHover     = null;
+  let onNodeClick     = null;
+  let onHoverEnd      = null;
+  let onNodeLongPress = null;
 
   // --- CONSTANTS ---
   const NODE_RADIUS        = 0.28;
   const RANK_Y_SPACING     = 2.8;
-  const CAMERA_DISTANCE    = 14;
+  const CAMERA_DISTANCE    = 18;
   const CAMERA_TILT        = 0.3;   // radians (~17 degrees)
 
   const COLOR_MAP = {
@@ -179,13 +180,16 @@ const SkillRenderer = (() => {
     container.addEventListener('mouseleave', () => isDragging = false);
     container.addEventListener('wheel', e => {
       e.preventDefault();
-      const zoomMax = _viewMode === 'all' ? 70 : 40;
-      const zoomMin = _viewMode === 'all' ? 15 : 8;
+      const zoomMax = _viewMode === 'all' ? 90 : 55;
+      const zoomMin = _viewMode === 'all' ? 10 : 5;
       camera.position.z = Math.max(zoomMin, Math.min(zoomMax, camera.position.z + e.deltaY * 0.03));
     }, { passive: false });
 
-    // Touch support: single-finger pan + pinch-to-zoom + tap to click
-    const _touch = { dragging: false, pinching: false, lastDist: 0, startX: 0, startY: 0, lastX: 0, lastY: 0, movedPx: 0 };
+    // Touch support: single-finger pan + pinch-to-zoom + tap to click + long-press para tooltip
+    const _touch = { dragging: false, pinching: false, lastDist: 0, startX: 0, startY: 0, lastX: 0, lastY: 0, movedPx: 0, longPressFired: false };
+    let _longPressTimer = null;
+    const LONG_PRESS_MS = 450;
+
     function _touchDist(e) {
       return Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
     }
@@ -196,7 +200,32 @@ const SkillRenderer = (() => {
         _touch.startX = _touch.lastX = e.touches[0].clientX;
         _touch.startY = _touch.lastY = e.touches[0].clientY;
         _touch.movedPx = 0;
+        _touch.longPressFired = false;
+
+        // Inicia timer de long-press
+        clearTimeout(_longPressTimer);
+        _longPressTimer = setTimeout(() => {
+          _longPressTimer = null;
+          if (_touch.movedPx > 8) return;
+          const rect = renderer.domElement.getBoundingClientRect();
+          mouse.x = ((_touch.startX - rect.left) / rect.width) * 2 - 1;
+          mouse.y = -((_touch.startY - rect.top) / rect.height) * 2 + 1;
+          raycaster.setFromCamera(mouse, camera);
+          const meshes = nodeObjects.flatMap(n => [n.mesh, n.crystalMesh]);
+          const intersects = raycaster.intersectObjects(meshes);
+          if (intersects.length > 0) {
+            const hit = intersects[0].object;
+            const nodeObj = nodeObjects.find(n => n.mesh === hit || n.crystalMesh === hit);
+            if (nodeObj && onNodeLongPress) {
+              _touch.longPressFired = true;
+              _touch.dragging = false;
+              onNodeLongPress(nodeObj.skill, _touch.startX, _touch.startY);
+            }
+          }
+        }, LONG_PRESS_MS);
+
       } else if (e.touches.length === 2) {
+        clearTimeout(_longPressTimer); _longPressTimer = null;
         _touch.pinching = true; _touch.dragging = false;
         _touch.lastDist = _touchDist(e);
       }
@@ -213,14 +242,18 @@ const SkillRenderer = (() => {
         mainGroup.position.y -= (cy - _touch.lastY) * unitsPerPixel;
         _touch.movedPx += Math.hypot(cx - _touch.lastX, cy - _touch.lastY);
         _touch.lastX = cx; _touch.lastY = cy;
+        // Cancela long-press se o dedo moveu
+        if (_touch.movedPx > 8 && _longPressTimer) {
+          clearTimeout(_longPressTimer); _longPressTimer = null;
+        }
       } else if (e.touches.length === 2 && _touch.pinching) {
         const dist = _touchDist(e);
         const delta = _touch.lastDist - dist;
         _touch.lastDist = dist;
         const z1 = camera.position.z;
-        const zoomMax = _viewMode === 'all' ? 70 : 40;
-        const zoomMin = _viewMode === 'all' ? 15 : 8;
-        const z2 = Math.max(zoomMin, Math.min(zoomMax, z1 + delta * 0.05));
+        const zoomMax = _viewMode === 'all' ? 90 : 55;
+        const zoomMin = _viewMode === 'all' ? 10 : 5;
+        const z2 = Math.max(zoomMin, Math.min(zoomMax, z1 + delta * 0.12));
         // Zoom em direção ao ponto médio da pinça
         const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
         const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
@@ -234,9 +267,12 @@ const SkillRenderer = (() => {
       }
     }, { passive: false });
     container.addEventListener('touchend', e => {
+      // Sempre cancela o timer de long-press ao levantar o dedo
+      clearTimeout(_longPressTimer); _longPressTimer = null;
+
       if (e.touches.length === 0) {
-        if (_touch.dragging && _touch.movedPx < 10) {
-          // Tap: do immediate raycast and fire click if a node is hit
+        if (_touch.dragging && _touch.movedPx < 10 && !_touch.longPressFired) {
+          // Tap curto: abre modal de compra/detalhes
           const rect = renderer.domElement.getBoundingClientRect();
           const t = e.changedTouches[0];
           mouse.x = ((t.clientX - rect.left) / rect.width) * 2 - 1;
@@ -248,9 +284,12 @@ const SkillRenderer = (() => {
             const hit = intersects[0].object;
             const nodeObj = nodeObjects.find(n => n.mesh === hit || n.crystalMesh === hit);
             if (nodeObj && onNodeClick) onNodeClick(nodeObj.skill, e);
+          } else {
+            // Toque em área vazia: esconde tooltip se visível
+            if (onHoverEnd) onHoverEnd();
           }
         }
-        _touch.dragging = false; _touch.pinching = false;
+        _touch.dragging = false; _touch.pinching = false; _touch.longPressFired = false;
       } else if (e.touches.length === 1) {
         // Saiu de 2 dedos para 1: retoma pan
         _touch.pinching = false; _touch.dragging = true;
@@ -1040,10 +1079,11 @@ const SkillRenderer = (() => {
   }
 
   // ---- PUBLIC API ----
-  function setCallbacks(hover, click, hoverEnd) {
-    onNodeHover = hover;
-    onNodeClick = click;
-    onHoverEnd = hoverEnd;
+  function setCallbacks(hover, click, hoverEnd, longPress) {
+    onNodeHover     = hover;
+    onNodeClick     = click;
+    onHoverEnd      = hoverEnd;
+    onNodeLongPress = longPress;
   }
 
   function destroy() {
@@ -1121,7 +1161,7 @@ const SkillRenderer = (() => {
     // --- Reset camera to flat (no tilt) for panoramic view ---
     mainGroup.rotation.set(0, 0, 0);
     mainGroup.position.set(0, 0, 0);
-    camera.position.set(0, 0, 55);
+    camera.position.set(0, 0, 70);
     camera.rotation.set(0, 0, 0);
 
     const allPositions = {};

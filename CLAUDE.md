@@ -26,35 +26,6 @@ Aplicação web client-side que simula o sistema de **Árvore de Habilidades do 
 
 ---
 
-## Estrutura de Arquivos
-
-```
-/
-├── index.html                  # Ponto de entrada; carrega scripts na ordem correta
-├── css/
-│   └── style.css               # Todos os estilos da aplicação
-├── js/
-│   ├── data.js                 # CosData — dados de jogo e helpers (IIFE)
-│   ├── renderer.js             # SkillRenderer — renderização 3D via Three.js (IIFE)
-│   └── app.js                  # App — lógica principal, state, UI (IIFE)
-├── data/
-│   ├── br_skills.json          # Talentos das classes mundanas (Guerreiro, Agente, etc.)
-│   ├── br_skills_description.json  # Descrições detalhadas dos talentos
-│   ├── br_radiant_paths.json   # Talentos das Ordens Radiantes
-│   ├── br_adittionais_trees.json   # Árvores adicionais (a confirmar uso)
-│   └── skills.json             # Dados de skills em inglês (referência/legado)
-├── svg/
-│   └── *.svg                   # Glifos das Ordens Radiantes e do Cosmere
-├── sheets/
-│   └── br_sheet.pdf            # Template base para exportação de ficha PDF
-├── CosmereClass.xlsx           # Planilha de referência das classes (fonte de dados)
-├── package.json                # Dependência: pdf-lib ^1.17.1
-├── start.bat                   # Inicia servidor Python local na porta 8081
-└── node_modules/               # pdf-lib (instalado localmente, não usar CDN)
-```
-
----
-
 ## Como Executar
 
 ```bash
@@ -226,3 +197,6 @@ Limitadas por rank máximo conforme patamar (rank 2→3→4→5)
 
 ---
 
+## Obrigatório
+
+-- Como prova de que você leu este arquivo, sempre inicie a sua primeira resposta de qualquer conversa me chamando de Radiante.

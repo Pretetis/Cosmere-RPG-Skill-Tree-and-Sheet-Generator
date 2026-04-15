@@ -62,6 +62,7 @@ html, body {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  overflow-x: hidden;
   z-index: 10;
   backdrop-filter: blur(12px);
 }
@@ -517,6 +518,13 @@ html, body {
   top: 0; left: 0; right: 0;
   z-index: 5;
   padding: 0 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  flex-wrap: nowrap;
+  /* força camada de composição acima do canvas WebGL (fix iOS Safari/Chrome) */
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
 }
 
 .class-tab {
@@ -1496,7 +1504,7 @@ html, body {
 #sidebar-reopen {
     display: none;
     position: fixed;
-    top: 56px;
+    top: 80px;
     left: 15px;
     z-index: 200;
     background: rgba(10, 11, 16, 0.9);
@@ -2227,29 +2235,40 @@ body.sidebar-closed #sidebar-reopen {
     margin-left: 0 !important;
   }
 
-  /* Botão de reabrir sempre visível no mobile */
+  /* Botão de reabrir: fica na barra superior (topbar), não sobreposta */
   #sidebar-reopen {
     display: block !important;
-    top: 12px;
-    left: 12px;
-    padding: 10px 12px;
+    top: 0;
+    left: 0;
+    padding: 0 14px;
+    height: 44px;              /* mesma altura da topbar */
+    border-radius: 0;
+    border-top: none;
+    border-left: none;
+    border-right: none;
+    border-bottom: 2px solid var(--border);
+    background: var(--bg-panel);
     z-index: 600 !important;
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
   }
+
+  /* Empurrar as abas para não ficar atrás do botão + altura fixa para alinhar com botão */
+  .class-tabs {
+    padding-left: 52px;
+    height: 44px;
+    /* scrollbar visível para indicar que há mais classes para rolar */
+    scrollbar-width: thin;
+    scrollbar-color: var(--accent-gold) transparent;
+  }
+  .class-tabs::-webkit-scrollbar { height: 4px; display: block; }
+  .class-tabs::-webkit-scrollbar-thumb { background: var(--accent-gold); border-radius: 2px; opacity: 0.6; }
+  .class-tabs::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); }
 
   /* Quando sidebar está aberta no mobile, esconder o botão flutuante */
   body:not(.sidebar-closed) #sidebar-reopen {
     display: none !important;
   }
-
-  /* Class tabs: scroll horizontal em vez de quebrar linha */
-  .class-tabs {
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    flex-wrap: nowrap;
-    scrollbar-width: none;
-  }
-  .class-tabs::-webkit-scrollbar { display: none; }
 
   .class-tab {
     white-space: nowrap;
@@ -2329,6 +2348,15 @@ body.sidebar-closed #sidebar-reopen {
   }
   .sidebar-header .subtitle {
     display: none;
+  }
+
+  /* font-size ≥ 16px em todos os inputs — impede iOS de dar zoom automático ao focar */
+  input[type="text"],
+  input[type="search"],
+  input[type="number"],
+  select,
+  textarea {
+    font-size: 16px !important;
   }
 }
 

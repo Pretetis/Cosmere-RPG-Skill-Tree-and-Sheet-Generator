@@ -2176,6 +2176,14 @@ const App = (() => {
 
   // ---- INIT (async - waits for skills JSON) ----
   async function init() {
+    // Fechar sidebar ANTES dos awaits — garante estado correto no mobile
+    // independente de timing de carregamento dos JSON
+    if (window.innerWidth <= 768) {
+      document.getElementById('sidebar').classList.add('closed');
+      document.getElementById('viewport').classList.add('expanded');
+      document.body.classList.add('sidebar-closed');
+    }
+
     await CosData.loadSkills();
     await CosData.loadRadiantSkills();
     await CosData.loadAdditionalSkills();
@@ -2187,7 +2195,7 @@ const App = (() => {
     const viewport = document.getElementById('viewport');
     SkillRenderer.init(viewport);
 
-    // Callbacks: hover shows tooltip, click opens modal
+    // Callbacks: hover shows tooltip, click opens modal, long-press (mobile) shows tooltip
     SkillRenderer.setCallbacks(
       (skill, intersect) => {
         showTooltip(skill, window._lastMouseEvent);
@@ -2196,7 +2204,11 @@ const App = (() => {
         hideTooltip();
         showSkillModal(skill);
       },
-      () => hideTooltip()
+      () => hideTooltip(),
+      (skill, touchX, touchY) => {
+        // Long-press: mostra resumo sem abrir o modal de compra
+        showTooltip(skill, { clientX: touchX, clientY: touchY });
+      }
     );
 
     // Track mouse for tooltip positioning
@@ -2220,6 +2232,8 @@ const App = (() => {
     // Initial render
     renderSidebar();
     renderClassTabs();
+    // Recalcula o canvas agora que a topbar tem altura real (class-tabs populado)
+    window.dispatchEvent(new Event('resize'));
 
     rebuildTree();
 
@@ -2295,13 +2309,6 @@ const App = (() => {
 
     document.getElementById('sidebar-toggle')?.addEventListener('click', toggleSidebar);
     document.getElementById('sidebar-reopen')?.addEventListener('click', toggleSidebar);
-
-    // Em mobile, iniciar com a sidebar fechada para o viewport ocupar tela cheia
-    if (window.innerWidth <= 768) {
-      document.getElementById('sidebar').classList.add('closed');
-      document.getElementById('viewport').classList.add('expanded');
-      document.body.classList.add('sidebar-closed');
-    }
 
     // Collapsible talents section
     document.getElementById('talents-toggle')?.addEventListener('click', () => {
