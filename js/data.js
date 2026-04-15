@@ -92,24 +92,24 @@ const CosData = (() => {
       tier = 2;
       attrPoints = (lvl === 6 || lvl === 9) ? 1 : 0;
       hpGain = (lvl === 6) ? '4+FOR' : 4;
-      maxRank = 3; periciaRanks = 2; talents = 1;
+      maxRank = 3; periciaRanks = 2; talents = (lvl === 6) ? 2 : 1;
       ancestryBonus = (lvl === 6);
     } else if (lvl <= 15) {
       tier = 3;
       attrPoints = (lvl === 12 || lvl === 15) ? 1 : 0;
       hpGain = (lvl === 11) ? '3+FOR' : 3;
-      maxRank = 4; periciaRanks = 2; talents = 1;
+      maxRank = 4; periciaRanks = 2; talents = (lvl === 11) ? 2 : 1;
       ancestryBonus = (lvl === 11);
     } else if (lvl <= 20) {
       tier = 4;
       attrPoints = (lvl === 18) ? 1 : 0;
       hpGain = (lvl === 16) ? '2+FOR' : 2;
-      maxRank = 5; periciaRanks = 2; talents = 1;
+      maxRank = 5; periciaRanks = 2; talents = (lvl === 16) ? 2 : 1;
       ancestryBonus = (lvl === 16);
     } else {
       tier = 5;
       attrPoints = 0; hpGain = 1; maxRank = 5;
-      periciaRanks = 0; talents = 0;
+      periciaRanks = 0; talents = (lvl === 21) ? 1 : 0;
       ancestryBonus = (lvl === 21);
     }
     LEVEL_TABLE.push({ level: lvl, tier, attrPoints, hpGain, maxRank, periciaRanks, talents, ancestryBonus });
@@ -196,7 +196,7 @@ const CosData = (() => {
     return ADDITIONAL_SKILLS.filter(s => s.cls === cls);
   }
 
-  function getRootAdditionalSkill(cls) {
+    function getRootAdditionalSkill(cls) {
     return ADDITIONAL_SKILLS.find(s => s.cls === cls && s.rank === 0);
   }
 

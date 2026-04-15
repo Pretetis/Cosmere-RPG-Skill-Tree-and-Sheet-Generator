@@ -420,12 +420,28 @@ const App = (() => {
     }
 
     // Para habilidades regulares com nome compartilhado, verifica filhos em TODAS as classes
-    // pois remover uma cópia remove todas as cópias compartilhadas
+    // pois remover uma cópia remove todas as cópias compartilhadas.
+    // Um filho só bloqueia a remoção se ficar SEM nenhum outro dep satisfeito (lógica OR).
     if (!isRadiantSkill(skill)) {
-      const hasAnyChild = CosData.SKILLS.some(s =>
-        s.deps.includes(skill.name) && state.unlockedSkills.has(s.id)
-      );
-      if (hasAnyChild) return { can: false, reason: 'Outros talentos dependem deste' };
+      const orphanedChild = CosData.SKILLS.some(s => {
+        if (!s.deps.includes(skill.name)) return false;
+        if (!state.unlockedSkills.has(s.id)) return false;
+        // Verifica se o filho ainda teria algum outro dep satisfeito após a remoção
+        const stillSatisfied = s.deps.some(depName => {
+          if (depName === skill.name) return false;
+          const dep = CosData.findSkillByName(depName, s.cls);
+          if (!dep || !state.unlockedSkills.has(dep.id)) return false;
+          if (state.freeUnlockedSkills.has(dep.id)) {
+            return dep.deps.every(ddName => {
+              const dd = CosData.findSkillByName(ddName, s.cls);
+              return dd && state.unlockedSkills.has(dd.id);
+            });
+          }
+          return true;
+        });
+        return !stillSatisfied;
+      });
+      if (orphanedChild) return { can: false, reason: 'Outro talento depende exclusivamente deste' };
       return { can: true, reason: '' };
     }
 

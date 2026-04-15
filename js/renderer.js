@@ -17,6 +17,9 @@ const SkillRenderer = (() => {
   let currentClass = null;
   let animFrame = null;
 
+  // View configuration (multipliers applied to glow/line opacity; sub labels toggle)
+  const _config = { nodeGlow: 1.0, lineOpacity: 1.0, showSubLabels: false };
+
   // callbacks
   let onNodeHover     = null;
   let onNodeClick     = null;
@@ -404,6 +407,8 @@ const SkillRenderer = (() => {
       }
     }
 
+    addSubLabels(cls, skills, positions, CosData.SUBCLASSES[cls]);
+
     // Restore or center camera
     if (savedPos) {
       mainGroup.position.x = savedPos.x;
@@ -676,7 +681,7 @@ const SkillRenderer = (() => {
       map: getGlowTexture(),
       color: glowColor,
       transparent: true,
-      opacity: isUnlocked ? 0.70 : canUnlock ? 0.25 : 0.06,
+      opacity: (isUnlocked ? 0.70 : canUnlock ? 0.25 : 0.06) * _config.nodeGlow,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       depthTest: true,
@@ -706,14 +711,14 @@ const SkillRenderer = (() => {
         crystalMat.opacity = 1;
         mat.emissive = new THREE.Color(rootColor).multiplyScalar(0.15);
         mat.opacity = 0.25;
-        glowMat.opacity = 0.70;
+        glowMat.opacity = 0.70 * _config.nodeGlow;
       } else {
         glowMesh.scale.set(2.0, 2.0, 1);
         crystalMat.emissive = new THREE.Color(rootColor).multiplyScalar(0.25);
         crystalMat.opacity = 0.45;
         mat.emissive = new THREE.Color(rootColor).multiplyScalar(0.03);
         mat.opacity = 0.18;
-        glowMat.opacity = 0.15;
+        glowMat.opacity = 0.15 * _config.nodeGlow;
       }
     }
 
@@ -742,7 +747,7 @@ const SkillRenderer = (() => {
     const mat = new THREE.LineBasicMaterial({
       color: color,
       transparent: true,
-      opacity: isActive ? 0.5 : 0.12,
+      opacity: (isActive ? 0.5 : 0.12) * _config.lineOpacity,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
@@ -871,25 +876,25 @@ const SkillRenderer = (() => {
         if (obj.mesh.userData.isUnlocked) {
           const gs = 3.0 + pulse * 0.4;
           obj.glowMesh.scale.set(gs, gs, 1);
-          obj.glowMat.opacity = 0.35 + pulse * 0.2;
+          obj.glowMat.opacity = (0.35 + pulse * 0.2) * _config.nodeGlow;
           obj.crystalMat.emissive = new THREE.Color(obj.rootColor).multiplyScalar(0.8 + pulse * 0.5);
         } else {
-          obj.glowMat.opacity = 0.08 + pulse * 0.07;
+          obj.glowMat.opacity = (0.08 + pulse * 0.07) * _config.nodeGlow;
           obj.crystalMat.emissive = new THREE.Color(obj.rootColor).multiplyScalar(0.12 + pulse * 0.13);
         }
       } else if (obj.mesh.userData.isUnlocked) {
         const gs = 2.0 + pulse * 0.4;
         obj.glowMesh.scale.set(gs, gs, 1);
-        obj.glowMat.opacity = 0.25 + pulse * 0.2;
+        obj.glowMat.opacity = (0.25 + pulse * 0.2) * _config.nodeGlow;
         obj.crystalMat.emissive = new THREE.Color(obj.baseColor).multiplyScalar(0.5 + pulse * 0.5);
         obj.mat.emissive = new THREE.Color(obj.baseColor).multiplyScalar(0.04 + pulse * 0.06);
       } else if (obj.mesh.userData.canUnlock) {
         const gs = 1.4 + pulse * 0.2;
         obj.glowMesh.scale.set(gs, gs, 1);
-        obj.glowMat.opacity = 0.08 + pulse * 0.1;
+        obj.glowMat.opacity = (0.08 + pulse * 0.1) * _config.nodeGlow;
         obj.crystalMat.emissive = new THREE.Color(obj.baseColor).multiplyScalar(0.15 + pulse * 0.15);
       } else {
-        obj.glowMat.opacity = 0.03 + pulse * 0.03;
+        obj.glowMat.opacity = (0.03 + pulse * 0.03) * _config.nodeGlow;
         obj.crystalMat.emissive = new THREE.Color(obj.baseColor).multiplyScalar(0.05 + pulse * 0.05);
       }
     }
@@ -1005,7 +1010,7 @@ const SkillRenderer = (() => {
       const cls       = obj.cls || currentClass || obj.skill.cls;
       const color     = isActive ? (COLOR_MAP[cls] || COLOR_LOCKED) : COLOR_LOCKED;
       obj.mat.color.setHex(color);
-      obj.mat.opacity = isActive ? 0.5 : 0.12;
+      obj.mat.opacity = (isActive ? 0.5 : 0.12) * _config.lineOpacity;
       if (!wasActive && isActive) {
         createSmokeAlongLine(obj.from, obj.to, COLOR_MAP[cls] || COLOR_LOCKED);
       }
@@ -1034,7 +1039,7 @@ const SkillRenderer = (() => {
       obj.glowMat.color.setHex(color);
       const gs = isUnlocked ? 2.2 : canUnlock ? 1.5 : 1.2;
       obj.glowMesh.scale.set(gs, gs, 1);
-      obj.glowMat.opacity = isUnlocked ? 0.45 : canUnlock ? 0.15 : 0.06;
+      obj.glowMat.opacity = (isUnlocked ? 0.45 : canUnlock ? 0.15 : 0.06) * _config.nodeGlow;
       obj.baseColor = color;
 
       // Class root usa cor da própria árvore, com brilho diferenciado por estado
@@ -1047,14 +1052,14 @@ const SkillRenderer = (() => {
           obj.crystalMat.opacity = 1;
           obj.mat.emissive = new THREE.Color(rootColor).multiplyScalar(0.15);
           obj.mat.opacity = 0.25;
-          obj.glowMat.opacity = 0.70;
+          obj.glowMat.opacity = 0.70 * _config.nodeGlow;
           obj.glowMesh.scale.set(3.2, 3.2, 1);
         } else {
           obj.crystalMat.emissive = new THREE.Color(rootColor).multiplyScalar(0.25);
           obj.crystalMat.opacity = 0.45;
           obj.mat.emissive = new THREE.Color(rootColor).multiplyScalar(0.03);
           obj.mat.opacity = 0.18;
-          obj.glowMat.opacity = 0.15;
+          obj.glowMat.opacity = 0.15 * _config.nodeGlow;
           obj.glowMesh.scale.set(2.0, 2.0, 1);
         }
       }
@@ -1068,6 +1073,18 @@ const SkillRenderer = (() => {
     onHoverEnd      = hoverEnd;
     onNodeLongPress = longPress;
   }
+
+  function setConfig(newConfig) {
+    Object.assign(_config, newConfig);
+    // Apply line opacity immediately (not driven by animation loop)
+    if (newConfig.lineOpacity !== undefined) {
+      for (const obj of lineObjects) {
+        obj.mat.opacity = (obj.isActive ? 0.5 : 0.12) * _config.lineOpacity;
+      }
+    }
+  }
+
+  function getConfig() { return { ..._config }; }
 
   function destroy() {
     if (animFrame) cancelAnimationFrame(animFrame);
@@ -1279,6 +1296,56 @@ const SkillRenderer = (() => {
     }
   }
 
+  // ---- SUBCLASS LABELS ----
+  function createSubLabel(sub, x, y, cls) {
+    const fontSize = 16;
+    const tmp = document.createElement('canvas').getContext('2d');
+    tmp.font = `${fontSize}px Cinzel, serif`;
+    const textW = Math.ceil(tmp.measureText(sub).width) + 16;
+    const canvasW = Math.max(128, textW);
+    const canvasH = 28;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = canvasW; canvas.height = canvasH;
+    const ctx = canvas.getContext('2d');
+    ctx.font = `${fontSize}px Cinzel, serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    const hex = COLOR_MAP[cls] !== undefined ? COLOR_MAP[cls] : 0xc084fc;
+    const r = (hex >> 16) & 255, g = (hex >> 8) & 255, b = hex & 255;
+    ctx.fillStyle = `rgba(${r},${g},${b},0.5)`;
+    ctx.fillText(sub, canvasW / 2, canvasH / 2);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    const mat = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
+    const sprite = new THREE.Sprite(mat);
+    // Offset outward from the origin so the label sits past the centroid of the branch
+    const len = Math.sqrt(x * x + y * y);
+    const ox = len > 0.1 ? x + (x / len) * 1.5 : x;
+    const oy = len > 0.1 ? y + (y / len) * 1.5 : y;
+    sprite.position.set(ox, oy, 0.5);
+    sprite.scale.set(canvasW / canvasH * 0.85, 0.85, 1);
+    mainGroup.add(sprite);
+  }
+
+  function addSubLabels(cls, skills, positions, subs) {
+    if (!_config.showSubLabels || !subs || subs.length === 0) return;
+    for (const sub of subs) {
+      if (!sub || sub === '-') continue;
+      const subSkills = skills.filter(s => s.sub === sub);
+      if (subSkills.length === 0) continue;
+      let cx = 0, cy = 0, count = 0;
+      for (const s of subSkills) {
+        const p = positions[s.id];
+        if (p) { cx += p.x; cy += p.y; count++; }
+      }
+      if (count === 0) continue;
+      createSubLabel(sub, cx / count, cy / count, cls);
+    }
+  }
+
   function createClassLabel(cls, x, y) {
     const fontSize = 28;
     // Measure text first to avoid clipping long names
@@ -1348,6 +1415,7 @@ const SkillRenderer = (() => {
           }
         }
       }
+      addSubLabels(cls, skills, positions, CosData.ADDITIONAL_SUBCLASSES[cls]);
       if (savedPos) {
         mainGroup.position.x = savedPos.x;
         mainGroup.position.y = savedPos.y;
@@ -1385,6 +1453,7 @@ const SkillRenderer = (() => {
           }
         }
       }
+      addSubLabels(cls, skills, positions, CosData.RADIANT_SUBCLASSES[cls]);
       if (savedPos) {
         mainGroup.position.x = savedPos.x;
         mainGroup.position.y = savedPos.y;
@@ -1629,6 +1698,6 @@ const SkillRenderer = (() => {
     requestAnimationFrame(animateStep);
   }
 
-  return { init, buildTree: buildSingleTree, buildAllTrees, updateStates, setCallbacks, clearTree, destroy, getViewMode, transitionToClass };
+  return { init, buildTree: buildSingleTree, buildAllTrees, updateStates, setCallbacks, clearTree, destroy, getViewMode, transitionToClass, setConfig, getConfig };
 
 })();

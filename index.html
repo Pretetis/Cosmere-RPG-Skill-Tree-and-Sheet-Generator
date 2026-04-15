@@ -26,6 +26,40 @@
   <!-- Saves Modal -->
   <div id="saves-modal"></div>
 
+  <!-- View Settings Panel -->
+  <div id="view-settings-panel">
+    <div class="vsp-backdrop" id="vsp-backdrop"></div>
+    <div class="vsp-content">
+      <div class="vsp-header">
+        <span class="vsp-title">Configurações da Visualização</span>
+        <button class="vsp-close" id="vsp-close">&times;</button>
+      </div>
+      <div class="vsp-body">
+        <div class="vsp-row">
+          <label class="vsp-label">Brilho dos Nós</label>
+          <div class="vsp-control">
+            <input type="range" id="cfg-node-glow" class="vsp-slider" min="0" max="2" step="0.1" value="1">
+            <span class="vsp-val" id="cfg-node-glow-val">1.0</span>
+          </div>
+        </div>
+        <div class="vsp-row">
+          <label class="vsp-label">Opacidade das Linhas</label>
+          <div class="vsp-control">
+            <input type="range" id="cfg-line-opacity" class="vsp-slider" min="0" max="2" step="0.1" value="1">
+            <span class="vsp-val" id="cfg-line-opacity-val">1.0</span>
+          </div>
+        </div>
+        <div class="vsp-row vsp-row--toggle">
+          <label class="vsp-label">Nomes das Subclasses</label>
+          <label class="vsp-toggle">
+            <input type="checkbox" id="cfg-sub-labels">
+            <span class="vsp-toggle-track"><span class="vsp-toggle-thumb"></span></span>
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Credits Modal -->
   <div id="credits-modal" class="credits-modal-overlay">
     <div class="credits-modal-box">
@@ -240,6 +274,12 @@
     <!-- 3D Viewport -->
     <div id="viewport">
       <div class="class-tabs" id="class-tabs"></div>
+      <button id="btn-viewport-settings" class="viewport-settings-btn" title="Configurações da Visualização">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </button>
     </div>
 
   </div>
