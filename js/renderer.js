@@ -849,7 +849,11 @@ const SkillRenderer = (() => {
     }
     nodeObjects = [];
     lineObjects = [];
-    smokeParticles = [];
+    
+    // MANTÉM as partículas de trail para que terminem de desaparecer na scene.
+    // As fumaças normais ('helix' e 'gem') são apagadas pois pertenciam ao mainGroup.
+    smokeParticles = smokeParticles.filter(p => p.type === 'trail');
+    
     hoveredNode = null;
   }
 
@@ -894,8 +898,48 @@ const SkillRenderer = (() => {
       }
     }
 
+    // // Animate smoke particles
+    // for (const p of smokeParticles) {
+    //   if (p.type === 'helix') {
+    //     // Partícula avança ao longo da linha e orbita em hélix
+    //     const t = (p.travelOffset + time * p.travelSpeed) % 1.0;
+    //     const angle = p.phaseOffset + t * Math.PI * 2 * p.turns;
+
+    //     const lx = p.from.x + (p.to.x - p.from.x) * t;
+    //     const ly = p.from.y + (p.to.y - p.from.y) * t;
+    //     const lz = p.from.z + (p.to.z - p.from.z) * t;
+    //     const r  = p.helixRadius;
+    //     const ca = Math.cos(angle), sa = Math.sin(angle);
+
+    //     p.mesh.position.set(
+    //       lx + r * (ca * p.right.x + sa * p.perp.x),
+    //       ly + r * (ca * p.right.y + sa * p.perp.y),
+    //       lz + r * (ca * p.right.z + sa * p.perp.z),
+    //     );
+
+    //     // Fade nas bordas para esconder o loop; pulso suave de tamanho
+    //     const fade  = Math.sin(t * Math.PI);
+    //     const scale = 0.42 + Math.sin(time * 2.5 + p.phaseOffset) * 0.10;
+    //     p.mesh.scale.set(scale, scale, 1);
+    //     p.mesh.material.opacity = 0.50 * fade;
+
+    //   } else if (p.type === 'gem') {
+    //     // Partícula deriva para fora da gema e desvanece
+    //     p.life = (p.life + 0.007) % 1.0;
+    //     const age = p.life * p.lifetime;
+    //     p.mesh.position.set(
+    //       p.basePos.x + p.dx * age,
+    //       p.basePos.y + p.dy * age,
+    //       p.basePos.z + p.dz * age,
+    //     );
+    //     p.mesh.material.opacity = Math.sin(p.life * Math.PI) * p.maxOpacity;
+    //     const scale = 0.12 + p.life * 0.32;
+    //     p.mesh.scale.set(scale, scale, 1);
+    //   }
+    // }
     // Animate smoke particles
-    for (const p of smokeParticles) {
+    for (let i = smokeParticles.length - 1; i >= 0; i--) {
+      const p = smokeParticles[i];
       if (p.type === 'helix') {
         // Partícula avança ao longo da linha e orbita em hélix
         const t = (p.travelOffset + time * p.travelSpeed) % 1.0;
@@ -931,6 +975,18 @@ const SkillRenderer = (() => {
         p.mesh.material.opacity = Math.sin(p.life * Math.PI) * p.maxOpacity;
         const scale = 0.12 + p.life * 0.32;
         p.mesh.scale.set(scale, scale, 1);
+      } else if (p.type === 'trail') {
+        // Novo Star Trail da troca de classe
+        p.life -= p.decay;
+        if (p.life <= 0) {
+          scene.remove(p.mesh);
+          p.mesh.material.dispose();
+          smokeParticles.splice(i, 1);
+        } else {
+          p.mesh.material.opacity = p.life * 0.7;
+          const scale = p.baseScale * p.life;
+          p.mesh.scale.set(scale, scale, 1);
+        }
       }
     }
 
@@ -1486,10 +1542,14 @@ const SkillRenderer = (() => {
     while (endRot - startRot < -Math.PI) endRot += Math.PI * 2;
 
     // --- CORREÇÃO DA ROTAÇÃO E EIXOS ---
-    // ZXY garante que a roleta gire plana (Z) e só depois incline para trás (X), alinhando perfeitamente.
+    // Projetar a diferença trigonométrica do Tilt da câmera para evitar o pulo 3D no final do zoom
+    const tiltX = -0.09;
+    const rCos = R * Math.cos(tiltX);
+    const rSin = R * Math.sin(tiltX);
+
     mainGroup.rotation.order = 'ZXY';
-    mainGroup.position.set(-oldCx, -R - oldCy, 0);
-    mainGroup.rotation.set(-0.3 * 0.3, 0, startRot);
+    mainGroup.rotation.set(tiltX, 0, startRot);
+    mainGroup.position.set(-oldCx, -oldCy - rCos, -rSin);
 
     const baseZ = 18; 
     const peakZ = 38; 
@@ -1497,8 +1557,6 @@ const SkillRenderer = (() => {
     camera.rotation.x = 0.3;
 
     // --- CORREÇÃO DO FLARE/RASTRO ---
-    // Salvamos nossos objetos e limpamos a array oficial para que o loop principal
-    // (animate) pare de interferir nos nossos materiais durante a transição!
     const wheelNodes = [...nodeObjects];
     nodeObjects = []; 
 
@@ -1507,6 +1565,7 @@ const SkillRenderer = (() => {
 
     const duration = 1100;
     const startTime = performance.now();
+    const vPos = new THREE.Vector3(); // Reutilizado para performance
 
     function animateStep(time) {
       let t = (time - startTime) / duration;
@@ -1514,25 +1573,59 @@ const SkillRenderer = (() => {
 
       const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
-      // Interpola a rotação e a posição central
-      mainGroup.rotation.set(-0.09, 0, startRot + (endRot - startRot) * ease);
+      // Interpola a rotação e a posição central (com a projeção perfeita do cosseno/seno)
+      mainGroup.rotation.set(tiltX, 0, startRot + (endRot - startRot) * ease);
       const currentCx = oldCx + (newCx - oldCx) * ease;
       const currentCy = oldCy + (newCy - oldCy) * ease;
-      mainGroup.position.set(-currentCx, -R - currentCy, 0);
+      mainGroup.position.set(-currentCx, -currentCy - rCos, -rSin);
 
       // Zoom Out
       const zoomCurve = Math.sin(t * Math.PI);
       camera.position.z = baseZ + zoomCurve * (peakZ - baseZ);
 
-      // Flare massivo que agora VAI funcionar e criar um rastro
+      // Flare massivo
       const flare = Math.sin(t * Math.PI);
+      
       unlockedNodes.forEach(obj => {
         const baseGlowScale = obj.skill.rank === 0 ? 3.2 : 2.2;
-        obj.glowMesh.scale.setScalar(baseGlowScale + flare * 4.0); // Ainda maior para o rastro
+        obj.glowMesh.scale.setScalar(baseGlowScale + flare * 4.0); 
         obj.glowMat.opacity = 0.45 + flare * 0.65;
         
         const baseColor = obj.skill.rank === 0 ? obj.rootColor : obj.baseColor;
         obj.crystalMat.emissive = new THREE.Color(baseColor).multiplyScalar((obj.skill.rank === 0 ? 1.5 : 0.9) + flare * 4.0);
+
+        // --- STAR TRAIL EFFECT ---
+        // Emitir rastro na posição mundial se a animação estiver rodando a todo vapor
+        if (t > 0.05 && t < 0.95 && Math.random() > 0.3) {
+          obj.mesh.getWorldPosition(vPos);
+          const mat = new THREE.SpriteMaterial({
+            map: getGlowTexture(),
+            color: baseColor,
+            transparent: true,
+            opacity: 0.8,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+          });
+          const sprite = new THREE.Sprite(mat);
+          sprite.position.copy(vPos);
+          
+          // Uma espalhada leve nas partículas para deixá-las mais ricas
+          sprite.position.x += (Math.random() - 0.5) * 0.8;
+          sprite.position.y += (Math.random() - 0.5) * 0.8;
+          sprite.position.z += (Math.random() - 0.5) * 0.8;
+
+          const baseScale = obj.skill.rank === 0 ? 3.5 : 2.0;
+          sprite.scale.set(baseScale, baseScale, 1);
+          scene.add(sprite); // Coloca direto na scene (mundo) para não girar junto com o mainGroup
+
+          smokeParticles.push({
+            type: 'trail',
+            mesh: sprite,
+            life: 1.0,
+            decay: 0.02 + Math.random() * 0.03,
+            baseScale: baseScale
+          });
+        }
       });
 
       // Pulso de infusão na classe alvo
@@ -1545,15 +1638,33 @@ const SkillRenderer = (() => {
         });
       }
 
+      // Fade out all wheel nodes in the last 20% so the rebuild is invisible.
+      // This eliminates the position jump caused by non-zero wheel rotation on
+      // all classes except Agente (index 0, rot=0).
+      if (t > 0.8) {
+        const fadeOut = 1 - (t - 0.8) / 0.2;
+        wheelNodes.forEach(n => {
+          n.glowMat.opacity  *= fadeOut;
+          n.crystalMat.opacity *= fadeOut;
+          n.mat.opacity      *= fadeOut;
+        });
+        for (const obj of lineObjects) {
+          obj.mat.opacity *= fadeOut;
+        }
+      }
+
       if (t < 1) {
         requestAnimationFrame(animateStep);
       } else {
-        // Fim da animação: Reseta a ordem matemática para a engine não bugar a árvore individual
+        // Set camera/mainGroup to exactly match what centerCamera would
+        // produce for the new class's single-tree view, so rebuildTree(keepView)
+        // produces no visible jump.
         mainGroup.rotation.order = 'XYZ';
-        mainGroup.rotation.set(-0.09, 0, 0);
-        mainGroup.position.set(0, 0, 0);
-        
-        // Devolve o controle para o construtor principal
+        mainGroup.rotation.set(-CAMERA_TILT * 0.3, 0, 0);
+        mainGroup.position.set(-newCx, -newCy, 0);
+        camera.position.set(0, -2, CAMERA_DISTANCE);
+        camera.rotation.x = CAMERA_TILT;
+
         onComplete();
       }
     }

@@ -1502,7 +1502,7 @@ const App = (() => {
 
         // Chama a nossa nova transição 3D em vez do triggerTabSlide
         SkillRenderer.transitionToClass(oldClass, cls, stateData, () => {
-          rebuildTree();
+          rebuildTree(true);
         });
       });
       container.appendChild(btn);
