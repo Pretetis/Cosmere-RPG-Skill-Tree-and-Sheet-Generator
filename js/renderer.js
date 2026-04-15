@@ -1384,6 +1384,163 @@ const SkillRenderer = (() => {
     }
   }
 
-  return { init, buildTree: buildSingleTree, buildAllTrees, updateStates, setCallbacks, clearTree, destroy, getViewMode };
+  // ---- ANIMATION: ROLETA EM TAMANHO REAL ----
+  function transitionToClass(oldClass, newClass, stateData, onComplete) {
+    // 1. Limpa a árvore atual para construir o carrossel
+    clearTree();
+
+    // 2. Determina a ordem das classes na roleta
+    const allEntries = [];
+    if (stateData.radiantClass) allEntries.push({ cls: stateData.radiantClass, isRadiant: true });
+    CosData.CLASSES.forEach(cls => allEntries.push({ cls, isRadiant: false }));
+    if (stateData.additionalClasses && stateData.additionalClasses.length) {
+      stateData.additionalClasses.forEach(cls => allEntries.push({ cls, isRadiant: false, isAdditional: true }));
+    }
+
+    const total = allEntries.length;
+    // Raio gigante para que as árvores fiquem em TAMANHO REAL sem colidir umas nas outras
+    const R = 45; 
+
+    // 3. Constrói todas as árvores no aro da roleta (em tamanho real)
+    allEntries.forEach((entry, idx) => {
+      const angle = Math.PI / 2 - (2 * Math.PI * idx / total);
+      const cx = Math.cos(angle) * R;
+      const cy = Math.sin(angle) * R;
+
+      let graph;
+      if (entry.isRadiant) graph = CosData.buildRadiantGraph(entry.cls);
+      else if (entry.isAdditional) graph = CosData.buildAdditionalGraph(entry.cls);
+      else graph = CosData.buildGraph(entry.cls);
+
+      const root = entry.isRadiant ? CosData.getRootRadiantSkill(entry.cls) :
+                   entry.isAdditional ? CosData.getRootAdditionalSkill(entry.cls) :
+                   CosData.getRootSkill(entry.cls);
+
+      if (!root) return;
+
+      // Chama o layout em TAMANHO REAL (sem passar parâmetros de encolhimento)
+      const localPos = computeLayout(entry.cls, graph.skills, graph.children, root);
+      const treePositions = {};
+
+      graph.skills.forEach(skill => {
+        if (!localPos[skill.id]) return;
+        const lp = localPos[skill.id];
+        
+        // Gira cada árvore para que ela cresça apontando para fora do centro da roleta
+        const rot = angle - Math.PI / 2;
+        const rx = lp.x * Math.cos(rot) - lp.y * Math.sin(rot);
+        const ry = lp.x * Math.sin(rot) + lp.y * Math.cos(rot);
+
+        const pos = { x: cx + rx, y: cy + ry, z: lp.z };
+        treePositions[skill.id] = pos;
+
+        const isUnlocked = stateData.unlockedSkills.has(skill.id);
+        const canUnlock = !isUnlocked && stateData.canUnlockFn ? stateData.canUnlockFn(skill) : false;
+        
+        createNode(skill, pos, isUnlocked, canUnlock, entry.cls, stateData.pericias);
+        
+        // Marcamos o nó com a classe dele para podermos dar destaque no final
+        const lastNode = nodeObjects[nodeObjects.length - 1];
+        lastNode.treeCls = entry.cls;
+      });
+
+      // Recria as conexões em tamanho real
+      graph.skills.forEach(skill => {
+        if (!treePositions[skill.id]) return;
+        skill.deps.forEach(depName => {
+          const findFn = entry.isRadiant ? CosData.findRadiantSkillByName :
+                         entry.isAdditional ? CosData.findAdditionalSkillByName :
+                         CosData.findSkillByName;
+          const parent = findFn(depName, entry.cls);
+          if (parent && treePositions[parent.id]) {
+            createConnection(treePositions[parent.id], treePositions[skill.id], skill, parent, stateData.unlockedSkills, entry.cls);
+          }
+        });
+      });
+    });
+
+    // 4. Calcula as posições na roleta
+    const oldIdx = oldClass === '_all' ? 0 : Math.max(0, allEntries.findIndex(e => e.cls === oldClass));
+    const newIdx = newClass === '_all' ? 0 : Math.max(0, allEntries.findIndex(e => e.cls === newClass));
+
+    const oldAngle = Math.PI / 2 - (2 * Math.PI * oldIdx / total);
+    const newAngle = Math.PI / 2 - (2 * Math.PI * newIdx / total);
+
+    let startRot = (Math.PI / 2) - oldAngle;
+    let endRot = (Math.PI / 2) - newAngle;
+
+    // Garante o giro pelo caminho mais curto
+    while (endRot - startRot > Math.PI) endRot -= Math.PI * 2;
+    while (endRot - startRot < -Math.PI) endRot += Math.PI * 2;
+
+    // 5. Configura Câmera e Grupo
+    // Movemos o eixo da roleta lá para baixo (-R), com um pequeno ajuste (-15) 
+    // para imitar o centro vertical exato de uma árvore individual.
+    const offsetY = -15; 
+    mainGroup.position.set(0, -R + offsetY, 0);
+    mainGroup.rotation.set(-0.3 * 0.3, 0, startRot); // Mantém o leve tilt 3D
+
+    // O Zoom padrão é 18. Vamos afastar só até 38 para ver o movimento sem perder a escala
+    const baseZ = 12; 
+    const peakZ = 20; 
+    camera.position.set(0, 2, baseZ);
+    camera.rotation.x = -0.35;
+
+    // Filtra os nós para aplicar os efeitos visuais
+    const unlockedNodes = nodeObjects.filter(n => n.mesh.userData.isUnlocked);
+    const newTreeNodes = nodeObjects.filter(n => n.treeCls === newClass);
+
+    const duration = 1100; // Duração do giro
+    const startTime = performance.now();
+
+    function animateStep(time) {
+      let t = (time - startTime) / duration;
+      if (t > 1) t = 1;
+
+      // Easing suave (arranca devagar, corre no meio, freia no final)
+      const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+      // A. Gira a Roleta
+      mainGroup.rotation.z = startRot + (endRot - startRot) * ease;
+
+      // B. Zoom Out mínimo em formato de arco (afasta e volta)
+      const zoomCurve = Math.sin(t * Math.PI);
+      camera.position.z = baseZ + zoomCurve * (peakZ - baseZ);
+
+      // C. Flare de energia nas habilidades já desbloqueadas (rastro de luz)
+      const flare = Math.sin(t * Math.PI);
+      unlockedNodes.forEach(obj => {
+        const baseGlowScale = obj.skill.rank === 0 ? 3.2 : 2.2;
+        obj.glowMesh.scale.setScalar(baseGlowScale + flare * 2.5);
+        obj.glowMat.opacity = 0.45 + flare * 0.55;
+        const baseColor = obj.skill.rank === 0 ? obj.rootColor : obj.baseColor;
+        obj.crystalMat.emissive = new THREE.Color(baseColor).multiplyScalar((obj.skill.rank === 0 ? 1.5 : 0.9) + flare * 2.0);
+      });
+
+      // D. Destaca a Nova Árvore (Acende as gemas bloqueadas de leve quando a árvore chega)
+      if (t > 0.6) {
+        const highlight = (t - 0.6) / 0.4; // Vai de 0 a 1 apenas no trecho final da animação
+        newTreeNodes.forEach(obj => {
+          if (!obj.mesh.userData.isUnlocked) {
+            // Um pequeno pulso de luz nas habilidades que ainda estão travadas
+            obj.crystalMat.emissive.addScalar(highlight * 0.12);
+          }
+        });
+      }
+
+      if (t < 1) {
+        requestAnimationFrame(animateStep);
+      } else {
+        // Fim da animação: Reseta os parâmetros globais e renderiza a view final original
+        mainGroup.rotation.set(-0.3 * 0.3, 0, 0);
+        mainGroup.position.set(0, 0, 0);
+        onComplete();
+      }
+    }
+
+    requestAnimationFrame(animateStep);
+  }
+
+  return { init, buildTree: buildSingleTree, buildAllTrees, updateStates, setCallbacks, clearTree, destroy, getViewMode, transitionToClass };
 
 })();

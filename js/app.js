@@ -1482,10 +1482,28 @@ const App = (() => {
       btn.textContent = cls;
       btn.style.borderBottomColor = cls === state.activeClass ? `var(--color-${cls})` : 'transparent';
       btn.addEventListener('click', () => {
+        // if (state.activeClass === cls) return;
+        // state.activeClass = cls;
+        // renderClassTabs();
+        // triggerTabSlide(() => rebuildTree());
         if (state.activeClass === cls) return;
+        const oldClass = state.activeClass; // Guarda quem era a classe antiga
         state.activeClass = cls;
         renderClassTabs();
-        triggerTabSlide(() => rebuildTree());
+
+        // Agrupa o estado necessário para o renderer
+        const stateData = {
+          unlockedSkills: state.unlockedSkills,
+          pericias: state.pericias,
+          canUnlockFn: canUnlockCheck,
+          radiantClass: state.profile.radiantClass,
+          additionalClasses: state.profile.race === 'singer' ? ['Cantor'] : []
+        };
+
+        // Chama a nossa nova transição 3D em vez do triggerTabSlide
+        SkillRenderer.transitionToClass(oldClass, cls, stateData, () => {
+          rebuildTree();
+        });
       });
       container.appendChild(btn);
     }
