@@ -165,6 +165,8 @@ const SkillRenderer = (() => {
     // Pan / zoom
     let isDragging = false, dragStart = { x:0, y:0 }, groupStart = { x:0, y:0 };
     container.addEventListener('mousedown', e => {
+      // isDragging = true;
+      if (e.target.tagName !== 'CANVAS') return;
       isDragging = true;
       dragStart = { x: e.clientX, y: e.clientY };
       groupStart = { x: mainGroup.position.x, y: mainGroup.position.y };
@@ -179,6 +181,7 @@ const SkillRenderer = (() => {
     container.addEventListener('mouseup', () => isDragging = false);
     container.addEventListener('mouseleave', () => isDragging = false);
     container.addEventListener('wheel', e => {
+      if (e.target.tagName !== 'CANVAS') return;
       e.preventDefault();
       const zoomMax = _viewMode === 'all' ? 90 : 55;
       const zoomMin = _viewMode === 'all' ? 10 : 5;
@@ -194,6 +197,7 @@ const SkillRenderer = (() => {
       return Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
     }
     container.addEventListener('touchstart', e => {
+      if (e.target.tagName !== 'CANVAS') return;
       e.preventDefault();
       if (e.touches.length === 1) {
         _touch.dragging = true; _touch.pinching = false;
@@ -231,6 +235,7 @@ const SkillRenderer = (() => {
       }
     }, { passive: false });
     container.addEventListener('touchmove', e => {
+      if (e.target.tagName !== 'CANVAS') return;
       e.preventDefault();
       if (e.touches.length === 1 && _touch.dragging) {
         // Pan incremental: fator proporcional ao zoom para manter 1:1 com o dedo
@@ -267,6 +272,7 @@ const SkillRenderer = (() => {
       }
     }, { passive: false });
     container.addEventListener('touchend', e => {
+      if (e.target.tagName !== 'CANVAS') return;
       // Sempre cancela o timer de long-press ao levantar o dedo
       clearTimeout(_longPressTimer); _longPressTimer = null;
 
@@ -410,42 +416,6 @@ const SkillRenderer = (() => {
   }
 
   // ---- LAYOUT ALGORITHM ----
-  // ---- BACKUP: GRID LAYOUT (original) ----
-  // function computeLayout_grid(cls, skills, childrenMap, root) {
-  //   const positions = {};
-  //   const subs = CosData.SUBCLASSES[cls];
-  //   positions[root.id] = { x: 0, y: 0, z: 0 };
-  //   const subCount = subs.length;
-  //   subs.forEach((sub, subIdx) => {
-  //     const subSkills = skills.filter(s => s.sub === sub);
-  //     const centerX = (subIdx - (subCount - 1) / 2) * BRANCH_X_SPACING * 3;
-  //     const rank1Skills = subSkills.filter(s => s.rank === 1);
-  //     const branchCount = rank1Skills.length;
-  //     rank1Skills.forEach((r1, branchIdx) => {
-  //       const branchX = centerX + (branchIdx - (branchCount - 1) / 2) * BRANCH_X_SPACING;
-  //       const queue = [{ skill: r1, x: branchX, y: RANK_Y_SPACING }];
-  //       const visited = new Set();
-  //       while (queue.length > 0) {
-  //         const { skill, x, y } = queue.shift();
-  //         if (visited.has(skill.id)) continue;
-  //         visited.add(skill.id);
-  //         const z = -skill.rank * 0.3 + (Math.random() - 0.5) * 0.2;
-  //         positions[skill.id] = { x, y, z };
-  //         const kids = childrenMap[skill.name] || [];
-  //         const validKids = kids.filter(k => !visited.has(k.id));
-  //         if (validKids.length === 1) {
-  //           queue.push({ skill: validKids[0], x, y: y + RANK_Y_SPACING });
-  //         } else if (validKids.length > 1) {
-  //           validKids.forEach((kid, ki) => {
-  //             const kx = x + (ki - (validKids.length - 1) / 2) * BRANCH_X_SPACING * 0.5;
-  //             queue.push({ skill: kid, x: kx, y: y + RANK_Y_SPACING });
-  //           });
-  //         }
-  //       }
-  //     });
-  //   });
-  //   return positions;
-  // }
 
   // ---- ORGANIC / CONSTELLATION LAYOUT ----
   // Seeded PRNG for deterministic "random" positions per class

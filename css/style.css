@@ -520,7 +520,7 @@ html, body {
   padding: 0 8px;
   overflow-x: auto;
   overflow-y: hidden;
-  -webkit-overflow-scrolling: touch;
+/* -webkit-overflow-scrolling: touch; */
   flex-wrap: nowrap;
   /* força camada de composição acima do canvas WebGL (fix iOS Safari/Chrome) */
   transform: translateZ(0);
@@ -2256,14 +2256,16 @@ body.sidebar-closed #sidebar-reopen {
   /* Empurrar as abas para não ficar atrás do botão + altura fixa para alinhar com botão */
   .class-tabs {
     padding-left: 52px;
-    height: 44px;
-    /* scrollbar visível para indicar que há mais classes para rolar */
-    scrollbar-width: thin;
-    scrollbar-color: var(--accent-gold) transparent;
+    height: 48px; /* Aumentado um pouquinho para a barra de 4px caber sem ser cortada */
+    padding-bottom: 4px; /* Empurra os itens levemente para cima para a barra não sobrepor */
+    align-items: center; /* Evita que os botões estiquem até esmagar a barra */
+    scrollbar-width: none; /* Para Firefox Mobile */
   }
-  .class-tabs::-webkit-scrollbar { height: 4px; display: block; }
-  .class-tabs::-webkit-scrollbar-thumb { background: var(--accent-gold); border-radius: 2px; opacity: 0.6; }
-  .class-tabs::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); }
+  
+  /* Forçando a renderização em Chrome/Safari Mobile */
+  .class-tabs::-webkit-scrollbar { 
+    display: none; 
+  }
 
   /* Quando sidebar está aberta no mobile, esconder o botão flutuante */
   body:not(.sidebar-closed) #sidebar-reopen {
