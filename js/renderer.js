@@ -184,6 +184,82 @@ const SkillRenderer = (() => {
       camera.position.z = Math.max(zoomMin, Math.min(zoomMax, camera.position.z + e.deltaY * 0.03));
     }, { passive: false });
 
+    // Touch support: single-finger pan + pinch-to-zoom + tap to click
+    const _touch = { dragging: false, pinching: false, lastDist: 0, startX: 0, startY: 0, lastX: 0, lastY: 0, movedPx: 0 };
+    function _touchDist(e) {
+      return Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    }
+    container.addEventListener('touchstart', e => {
+      e.preventDefault();
+      if (e.touches.length === 1) {
+        _touch.dragging = true; _touch.pinching = false;
+        _touch.startX = _touch.lastX = e.touches[0].clientX;
+        _touch.startY = _touch.lastY = e.touches[0].clientY;
+        _touch.movedPx = 0;
+      } else if (e.touches.length === 2) {
+        _touch.pinching = true; _touch.dragging = false;
+        _touch.lastDist = _touchDist(e);
+      }
+    }, { passive: false });
+    container.addEventListener('touchmove', e => {
+      e.preventDefault();
+      if (e.touches.length === 1 && _touch.dragging) {
+        // Pan incremental: fator proporcional ao zoom para manter 1:1 com o dedo
+        const tanHalf = Math.tan(camera.fov * Math.PI / 360);
+        const rect = container.getBoundingClientRect();
+        const unitsPerPixel = 2 * camera.position.z * tanHalf / rect.height;
+        const cx = e.touches[0].clientX, cy = e.touches[0].clientY;
+        mainGroup.position.x += (cx - _touch.lastX) * unitsPerPixel;
+        mainGroup.position.y -= (cy - _touch.lastY) * unitsPerPixel;
+        _touch.movedPx += Math.hypot(cx - _touch.lastX, cy - _touch.lastY);
+        _touch.lastX = cx; _touch.lastY = cy;
+      } else if (e.touches.length === 2 && _touch.pinching) {
+        const dist = _touchDist(e);
+        const delta = _touch.lastDist - dist;
+        _touch.lastDist = dist;
+        const z1 = camera.position.z;
+        const zoomMax = _viewMode === 'all' ? 70 : 40;
+        const zoomMin = _viewMode === 'all' ? 15 : 8;
+        const z2 = Math.max(zoomMin, Math.min(zoomMax, z1 + delta * 0.05));
+        // Zoom em direção ao ponto médio da pinça
+        const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        const rect = container.getBoundingClientRect();
+        const ndcX = (mx - rect.left) / rect.width - 0.5;   // -0.5 a +0.5
+        const ndcY = 0.5 - (my - rect.top) / rect.height;
+        const tanHalf = Math.tan(camera.fov * Math.PI / 360);
+        mainGroup.position.x += ndcX * 2 * tanHalf * camera.aspect * (z1 - z2);
+        mainGroup.position.y += ndcY * 2 * tanHalf * (z1 - z2);
+        camera.position.z = z2;
+      }
+    }, { passive: false });
+    container.addEventListener('touchend', e => {
+      if (e.touches.length === 0) {
+        if (_touch.dragging && _touch.movedPx < 10) {
+          // Tap: do immediate raycast and fire click if a node is hit
+          const rect = renderer.domElement.getBoundingClientRect();
+          const t = e.changedTouches[0];
+          mouse.x = ((t.clientX - rect.left) / rect.width) * 2 - 1;
+          mouse.y = -((t.clientY - rect.top) / rect.height) * 2 + 1;
+          raycaster.setFromCamera(mouse, camera);
+          const meshes = nodeObjects.flatMap(n => [n.mesh, n.crystalMesh]);
+          const intersects = raycaster.intersectObjects(meshes);
+          if (intersects.length > 0) {
+            const hit = intersects[0].object;
+            const nodeObj = nodeObjects.find(n => n.mesh === hit || n.crystalMesh === hit);
+            if (nodeObj && onNodeClick) onNodeClick(nodeObj.skill, e);
+          }
+        }
+        _touch.dragging = false; _touch.pinching = false;
+      } else if (e.touches.length === 1) {
+        // Saiu de 2 dedos para 1: retoma pan
+        _touch.pinching = false; _touch.dragging = true;
+        _touch.startX = _touch.lastX = e.touches[0].clientX;
+        _touch.startY = _touch.lastY = e.touches[0].clientY;
+        _touch.movedPx = 0;
+      }
+    }, { passive: false });
+
     // Start loop
     animate();
   }

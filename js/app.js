@@ -2296,6 +2296,13 @@ const App = (() => {
     document.getElementById('sidebar-toggle')?.addEventListener('click', toggleSidebar);
     document.getElementById('sidebar-reopen')?.addEventListener('click', toggleSidebar);
 
+    // Em mobile, iniciar com a sidebar fechada para o viewport ocupar tela cheia
+    if (window.innerWidth <= 768) {
+      document.getElementById('sidebar').classList.add('closed');
+      document.getElementById('viewport').classList.add('expanded');
+      document.body.classList.add('sidebar-closed');
+    }
+
     // Collapsible talents section
     document.getElementById('talents-toggle')?.addEventListener('click', () => {
       document.getElementById('talents-section')?.classList.toggle('collapsed');

@@ -8,7 +8,4 @@ dist/
 build/
 *.egg-info/
 node_modules/
-claude.md
 inspecionar_pdf.js
-graphify-out/
-.claude/
