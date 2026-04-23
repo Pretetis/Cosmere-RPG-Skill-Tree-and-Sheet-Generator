@@ -1,0 +1,11 @@
+[
+    { "id":  1, "cls": "Alternauta",  "philosophy": "Eu alcançarei meu potencial", "2_oath": "Eu seguirei o caminho que eu coloco à minha frente, não o caminho que os outros esperam que eu siga", "3_oath": "Eu colocarei luz sobre meus erros passados para que cometa apenas aqueles que não cometi"},
+    { "id":  2, "cls": "Corredor dos Ventos",  "philosophy": "Eu irei proteger", "2_oath": "Eu vou proteger aqueles que não podem proteger a si mesmos", "3_oath": "Protegerei até mesmo aqueles que odeio, contanto que isso seja o certo"},
+    { "id":  3, "cls": "Dançarino dos Precipícios",  "philosophy": "Eu me lembrarei", "2_oath": "Vou me lembrar daqueles que foram esquecidos", "3_oath": "Eu escutarei aqueles que foram ignorados"},
+    { "id":  4, "cls": "Guardião das Pedras",  "philosophy": "Eu estarei presente quando for necessário", "2_oath": "Eu vou avançar quando os outros recuarem", "3_oath": "Eu serei o apoio do qual os outros podem depender"},
+    { "id":  5, "cls": "Plasmador",  "philosophy": "Eu buscarei a liberdade", "2_oath": "Eu buscarei a liberdade para os oprimidos", "3_oath": "Eu lutarei contra a opressão, até mesmo contra a tirania dos líderes a quem sirvo"},
+    { "id":  6, "cls": "Pulverizador",  "philosophy": "Eu buscarei o autocontrole", "2_oath": "Para controlar meu poder, irei controlar a mim mesmo", "3_oath": "Para compreender meu poder, irei compreender oque é o poder"},
+    { "id":  7, "cls": "Rompe-Céu",  "philosophy": "Eu buscarei a justiça", "2_oath": "Eu juro buscar a justiça, deixar que me guie, até encontrar um Ideal mais perfeito", "3_oath": "Eu juro seguir aquilo que me guie para oque é o certo"},
+    { "id":  8, "cls": "Sentinela da Verdade",  "philosophy": "Eu buscarei a verdade", "2_oath": "Eu buscarei a verdade aonde quer que ela esteja escondida", "3_oath": "Eu revelarei a verdade para todos que a buscam"},
+    { "id":  9, "cls": "Teceluz",  "philosophy": "Eu falerei a minha verdade"}
+]

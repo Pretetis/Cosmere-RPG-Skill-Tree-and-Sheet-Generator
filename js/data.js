@@ -179,10 +179,13 @@ const CosData = (() => {
     const clsSet = [];
     const subMap = {};
     for (const s of ADDITIONAL_SKILLS) {
-      if (!clsSet.includes(s.cls)) {
+      const isRadiant = RADIANT_SKILLS.some(r => r.cls === s.cls);
+      // Only treat as a standalone additional class if it isn't already a radiant class
+      if (!isRadiant && !clsSet.includes(s.cls)) {
         clsSet.push(s.cls);
-        subMap[s.cls] = [];
       }
+      // Always track subclasses so the renderer can label disconnected sub-trees
+      if (!subMap[s.cls]) subMap[s.cls] = [];
       if (s.sub !== '-' && !subMap[s.cls].includes(s.sub)) {
         subMap[s.cls].push(s.sub);
       }
@@ -190,6 +193,16 @@ const CosData = (() => {
     ADDITIONAL_CLASSES = clsSet;
     ADDITIONAL_SUBCLASSES = subMap;
     return ADDITIONAL_SKILLS;
+  }
+
+  let OATHS = [];
+  async function loadOaths() {
+    const resp = await fetch('data/br_oaths.json');
+    OATHS = await resp.json();
+    return OATHS;
+  }
+  function getOathData(cls) {
+    return OATHS.find(o => o.cls === cls) || null;
   }
 
   function getAdditionalSkillsByClass(cls) {
@@ -324,7 +337,8 @@ const CosData = (() => {
     get ADDITIONAL_CLASSES()    { return ADDITIONAL_CLASSES; },
     get ADDITIONAL_SUBCLASSES() { return ADDITIONAL_SUBCLASSES; },
     ADDITIONAL_ID_OFFSET,
-    loadSkills, loadRadiantSkills, loadAdditionalSkills,
+    get OATHS() { return OATHS; },
+    loadSkills, loadRadiantSkills, loadAdditionalSkills, loadOaths, getOathData,
     getSkillsByClass, getSkillById, findSkillByName,
     getRadiantSkillsByClass, getRootRadiantSkill,
     findRadiantSkillByName, buildRadiantGraph,

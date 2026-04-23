@@ -18,7 +18,7 @@ const SkillRenderer = (() => {
   let animFrame = null;
 
   // View configuration (multipliers applied to glow/line opacity; sub labels toggle)
-  const _config = { nodeGlow: 1.0, lineOpacity: 1.0, showSubLabels: false };
+  const _config = { nodeGlow: 1.0, lineOpacity: 1.0, showSubLabels: false, glassOpacity: 0.3, gemColorOverride: null };
 
   // callbacks
   let onNodeHover     = null;
@@ -632,8 +632,10 @@ const SkillRenderer = (() => {
 
   // ---- CREATE NODE (Stormlight Sphere with inner Gemstone) ----
   function createNode(skill, pos, isUnlocked, canUnlock, cls, periciaValues) {
-    const baseColor = isUnlocked ? COLOR_MAP[cls] : canUnlock ? COLOR_MAP[cls] : COLOR_LOCKED;
-    const glowColor = isUnlocked ? COLOR_MAP[cls] : canUnlock ? COLOR_MAP[cls] : COLOR_LOCKED;
+    const classColor = COLOR_MAP[cls] || COLOR_UNLOCKED;
+    const _gemTint = _config.gemColorOverride;
+    const baseColor = (isUnlocked || canUnlock) ? (_gemTint || classColor) : COLOR_LOCKED;
+    const glowColor = baseColor;
 
     // -- Inner crystal gemstone (rendered first) --
     const crystalGeo = getGemGeometry(skill.rank, NODE_RADIUS * 0.48);
@@ -659,13 +661,14 @@ const SkillRenderer = (() => {
 
     // -- Outer glass shell (rendered after crystal, no depth write) --
     const geo = new THREE.SphereGeometry(NODE_RADIUS, 32, 32);
+    const _baseGlassOpacity = _config.glassOpacity;
     const mat = new THREE.MeshPhysicalMaterial({
       color: 0xffffff,
       emissive: new THREE.Color(baseColor).multiplyScalar(isUnlocked ? 0.18 : canUnlock ? 0.07 : 0.02),
       roughness: 0.05,
       metalness: 0.0,
       transparent: true,
-      opacity: 0.3,
+      opacity: _baseGlassOpacity,
       clearcoat: 1.0,
       clearcoatRoughness: 0.05,
       depthWrite: false,
@@ -699,7 +702,9 @@ const SkillRenderer = (() => {
     }
 
     // Rank 0 (class root) gets special treatment — usa cor da própria árvore
-    const rootColor = COLOR_MAP[cls] || COLOR_UNLOCKED;
+    const rootColor = (_config.gemColorOverride && (isUnlocked || canUnlock)) ? _config.gemColorOverride : (COLOR_MAP[cls] || COLOR_UNLOCKED);
+    // normalizedGlassOpacity = design default at glassOpacity=0.3, used as multiplier base
+    let normalizedGlassOpacity = 0.3;
     if (skill.rank === 0) {
       mesh.scale.setScalar(1.5);
       crystalMesh.scale.setScalar(1.5);
@@ -710,20 +715,22 @@ const SkillRenderer = (() => {
         crystalMat.emissive = new THREE.Color(rootColor).multiplyScalar(1.5);
         crystalMat.opacity = 1;
         mat.emissive = new THREE.Color(rootColor).multiplyScalar(0.15);
-        mat.opacity = 0.25;
+        normalizedGlassOpacity = 0.25;
+        mat.opacity = normalizedGlassOpacity * (_baseGlassOpacity / 0.3);
         glowMat.opacity = 0.70 * _config.nodeGlow;
       } else {
         glowMesh.scale.set(2.0, 2.0, 1);
         crystalMat.emissive = new THREE.Color(rootColor).multiplyScalar(0.25);
         crystalMat.opacity = 0.45;
         mat.emissive = new THREE.Color(rootColor).multiplyScalar(0.03);
-        mat.opacity = 0.18;
+        normalizedGlassOpacity = 0.18;
+        mat.opacity = normalizedGlassOpacity * (_baseGlassOpacity / 0.3);
         glowMat.opacity = 0.15 * _config.nodeGlow;
       }
     }
 
     mesh.userData = { skill, isUnlocked, canUnlock };
-    const obj = { mesh, skill, glowMesh, crystalMesh, crystalMat, pos, mat, glowMat, baseColor, rootColor };
+    const obj = { mesh, skill, glowMesh, crystalMesh, crystalMat, pos, mat, glowMat, baseColor, rootColor, baseGlassOpacity: normalizedGlassOpacity };
     nodeObjects.push(obj);
     if (isUnlocked) createGemEmitter(obj);
   }
@@ -1076,10 +1083,27 @@ const SkillRenderer = (() => {
 
   function setConfig(newConfig) {
     Object.assign(_config, newConfig);
-    // Apply line opacity immediately (not driven by animation loop)
     if (newConfig.lineOpacity !== undefined) {
       for (const obj of lineObjects) {
         obj.mat.opacity = (obj.isActive ? 0.5 : 0.12) * _config.lineOpacity;
+      }
+    }
+    if (newConfig.glassOpacity !== undefined) {
+      for (const obj of nodeObjects) {
+        const ratio = newConfig.glassOpacity / 0.3;
+        obj.mat.opacity = obj.baseGlassOpacity * ratio;
+      }
+    }
+    if (newConfig.gemColorOverride !== undefined) {
+      for (const obj of nodeObjects) {
+        const isUnlocked = obj.mesh.userData.isUnlocked;
+        const canUnlock = obj.mesh.userData.canUnlock;
+        const cls = currentClass || obj.skill.cls;
+        const classColor = COLOR_MAP[cls] || COLOR_UNLOCKED;
+        const newColor = (isUnlocked || canUnlock) ? (_config.gemColorOverride || classColor) : COLOR_LOCKED;
+        obj.crystalMat.color.setHex(newColor);
+        obj.glowMat.color.setHex(newColor);
+        obj.baseColor = newColor;
       }
     }
   }
@@ -1483,12 +1507,54 @@ const SkillRenderer = (() => {
         }
       }
       addSubLabels(cls, skills, positions, CosData.RADIANT_SUBCLASSES[cls]);
+
+      // Render disconnected additional sub-trees for this radiant class (e.g. Iluminado for Sentinela da Verdade)
+      let allPositions = { ...positions };
+      const addlSkills = CosData.getAdditionalSkillsByClass(cls);
+      if (addlSkills.length > 0) {
+        const addlRoot = CosData.getRootAdditionalSkill(cls);
+        if (addlRoot) {
+          const { skills: aSkills, children: aChildren } = CosData.buildAdditionalGraph(cls);
+          const rawAddlPos = computeLayout(cls + '_addl', aSkills, aChildren, addlRoot);
+
+          // Place additional tree below the main tree with a gap
+          const mainYMin = Math.min(...Object.values(positions).map(p => p.y));
+          const addlYMax = Math.max(...Object.values(rawAddlPos).map(p => p.y));
+          const offsetY = mainYMin - addlYMax - 3;
+
+          const addlPositions = {};
+          for (const [id, pos] of Object.entries(rawAddlPos)) {
+            addlPositions[id] = { x: pos.x, y: pos.y + offsetY, z: pos.z };
+          }
+
+          for (const skill of aSkills) {
+            const pos = addlPositions[skill.id];
+            if (!pos) continue;
+            const isUnlocked = unlockedSkills.has(skill.id);
+            const canUnlock  = !isUnlocked && _canUnlockFn ? _canUnlockFn(skill) : false;
+            createNode(skill, pos, isUnlocked, canUnlock, cls, periciaValues);
+          }
+          for (const skill of aSkills) {
+            const posTo = addlPositions[skill.id];
+            if (!posTo) continue;
+            for (const depName of skill.deps) {
+              const parent = CosData.findAdditionalSkillByName(depName, cls);
+              if (parent && addlPositions[parent.id]) {
+                createConnection(addlPositions[parent.id], posTo, skill, parent, unlockedSkills, cls);
+              }
+            }
+          }
+          addSubLabels(cls, aSkills, addlPositions, CosData.ADDITIONAL_SUBCLASSES[cls]);
+          allPositions = { ...allPositions, ...addlPositions };
+        }
+      }
+
       if (savedPos) {
         mainGroup.position.x = savedPos.x;
         mainGroup.position.y = savedPos.y;
         camera.position.z = savedZoom;
       } else {
-        centerCamera(positions);
+        centerCamera(allPositions);
       }
     } else {
       buildTree(cls, unlockedSkills, periciaValues, keepView, canUnlockFn);

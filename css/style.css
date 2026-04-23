@@ -1400,6 +1400,53 @@ html, body {
   animation: oath-wind-dim 0.7s ease forwards;
 }
 
+/* ---- PARTÍCULAS DE VENTO / STORMLIGHT ---- */
+.wind-particle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: var(--oath-color, #d4a853);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 10000;
+  box-shadow: 0 0 6px var(--oath-color, #d4a853), 0 0 12px var(--oath-color, #d4a853);
+}
+
+.oath-letter {
+  opacity: 0; /* Começa invisível */
+  display: inline-block;
+  transition: opacity 0.1s ease-out;
+}
+
+/* Classe adicionada via JS no exato momento que a partícula atinge a letra */
+.oath-letter.glow-in {
+  opacity: 1;
+  text-shadow: 0 0 15px var(--oath-color), 0 0 30px var(--oath-color);
+  animation: settle-stormlight 1.5s forwards;
+}
+
+@keyframes settle-stormlight {
+  100% { 
+    /* O brilho se acalma depois que a letra é formada */
+    text-shadow: 0 0 2px rgba(255,255,255,0.2); 
+  }
+}
+
+@keyframes wind-blow {
+  0% { 
+    transform: translate(0, 0) scale(0); 
+    opacity: 0; 
+  }
+  15% { 
+    transform: translate(5px, 0) scale(1.5); 
+    opacity: 0.9; 
+  }
+  100% { 
+    transform: translate(var(--dx), var(--dy)) scale(0); 
+    opacity: 0; 
+  }
+}
+
 @keyframes oath-wind-in {
   0%   { opacity: 1; clip-path: inset(0 102% 0 0 round 2px); }
   100% {
@@ -1584,6 +1631,21 @@ html, body {
 .sphere-btn.locked {
     cursor: not-allowed;
     opacity: 0.3;
+}
+
+.sphere-btn.canone-locked {
+    cursor: not-allowed;
+    opacity: 0.25;
+    border-style: dashed;
+}
+
+.canone-surge-locked {
+    opacity: 0.6;
+}
+
+.canone-lock-badge {
+    font-size: 0.7em;
+    vertical-align: middle;
 }
 
 /* ---- PERICIA FILTER ---- */
@@ -2785,4 +2847,279 @@ body.sidebar-closed #sidebar-reopen {
 .vsp-toggle input:checked + .vsp-toggle-track .vsp-toggle-thumb {
   transform: translateX(18px);
   background: var(--accent-gold);
+}
+.vsp-row--color { align-items: center; }
+.vsp-control--color { display: flex; align-items: center; gap: 10px; }
+.vsp-color {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  padding: 2px;
+  background: rgba(255,255,255,0.08);
+  cursor: pointer;
+  outline: 1px solid rgba(255,255,255,0.12);
+  transition: outline-color 0.2s;
+}
+.vsp-color:hover { outline-color: var(--accent-gold); }
+.vsp-color::-webkit-color-swatch-wrapper { padding: 0; border-radius: 4px; }
+.vsp-color::-webkit-color-swatch { border: none; border-radius: 4px; }
+
+/* ---- CÂNONE MODAL (Pulverizador) ---- */
+#canone-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3000;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  backdrop-filter: blur(4px);
+}
+#canone-modal-overlay.visible {
+  opacity: 1;
+}
+.canone-modal {
+  background: #1a1a1f;
+  border: 1px solid var(--canone-color, #ef4444);
+  border-radius: 16px;
+  padding: 2rem 2.5rem;
+  max-width: 520px;
+  width: 90%;
+  box-shadow: 0 0 40px var(--canone-color, #ef4444)33, 0 8px 32px rgba(0,0,0,0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.canone-modal-glyph {
+  text-align: center;
+}
+.canone-modal-title {
+  font-size: 1.4rem;
+  font-weight: 700;
+  text-align: center;
+  margin: 0;
+  letter-spacing: 0.04em;
+}
+.canone-modal-text {
+  color: var(--text-muted);
+  line-height: 1.6;
+  font-size: 0.92rem;
+  text-align: center;
+  margin: 0;
+}
+.canone-modal-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.canone-btn {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  padding: 0.9rem 1.2rem;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  transition: background 0.2s, border-color 0.2s;
+  color: inherit;
+}
+.canone-btn:hover {
+  background: rgba(255,255,255,0.08);
+}
+.canone-btn-label {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.canone-btn-sub {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* ---- JURAMENTO PESSOAL MODAL ---- */
+#personal-oath-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9998;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  backdrop-filter: blur(6px);
+}
+#personal-oath-overlay.visible {
+  opacity: 1;
+}
+
+.personal-oath-modal {
+  background: linear-gradient(160deg, #13131a 0%, #1a1624 100%);
+  border: 1px solid color-mix(in srgb, var(--oath-color) 40%, transparent);
+  border-radius: 20px;
+  padding: 2rem 2.5rem 2.25rem;
+  max-width: 560px;
+  width: 92%;
+  box-shadow:
+    0 0 60px color-mix(in srgb, var(--oath-color) 18%, transparent),
+    0 12px 48px rgba(0,0,0,0.7);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  position: relative;
+}
+
+.personal-oath-glyph {
+  text-align: center;
+  margin-bottom: 0.25rem;
+}
+
+.personal-oath-header {
+  text-align: center;
+}
+.personal-oath-ideal-name {
+  font-family: 'Cinzel', serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--oath-color, #d4a853);
+  letter-spacing: 0.06em;
+}
+.personal-oath-order {
+  font-size: 0.8rem;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+}
+
+.personal-oath-philosophy {
+  font-family: 'Cinzel', serif;
+  font-size: 0.95rem;
+  font-style: italic;
+  text-align: center;
+  color: color-mix(in srgb, var(--oath-color) 80%, white);
+  opacity: 0.85;
+  padding: 0 0.5rem;
+}
+
+.personal-oath-divider {
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    color-mix(in srgb, var(--oath-color) 50%, transparent),
+    transparent
+  );
+  margin: 0.25rem 0;
+}
+
+.personal-oath-instruction {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  text-align: center;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.personal-oath-input-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.personal-oath-textarea {
+  width: 100%;
+  min-height: 110px;
+  resize: vertical;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid color-mix(in srgb, var(--oath-color) 30%, rgba(255,255,255,0.1));
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+  color: inherit;
+  font-family: 'Cinzel', serif;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.personal-oath-textarea:focus {
+  border-color: color-mix(in srgb, var(--oath-color) 70%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--oath-color) 15%, transparent);
+}
+.personal-oath-textarea::placeholder {
+  color: rgba(255,255,255,0.2);
+  font-style: italic;
+}
+
+.personal-oath-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.personal-oath-mic {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+.personal-oath-mic:hover {
+  background: rgba(255,255,255,0.1);
+  color: var(--oath-color, #d4a853);
+  border-color: var(--oath-color, #d4a853);
+}
+.personal-oath-mic.listening {
+  color: #ef4444;
+  border-color: #ef4444;
+  background: rgba(239,68,68,0.12);
+  animation: mic-pulse 1.2s ease-in-out infinite;
+}
+@keyframes mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+  50%       { box-shadow: 0 0 0 8px rgba(239,68,68,0); }
+}
+
+.personal-oath-confirm {
+  flex: 1;
+  padding: 0.75rem 1.25rem;
+  background: color-mix(in srgb, var(--oath-color) 20%, transparent);
+  border: 1px solid color-mix(in srgb, var(--oath-color) 60%, transparent);
+  border-radius: 10px;
+  color: var(--oath-color, #d4a853);
+  font-family: 'Cinzel', serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s, opacity 0.2s;
+}
+.personal-oath-confirm:not(:disabled):hover {
+  background: color-mix(in srgb, var(--oath-color) 30%, transparent);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--oath-color) 30%, transparent);
+}
+.personal-oath-confirm:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Frase única longa (2º/3º ideais) — wraps e centraliza melhor */
+.oath-phrase--single {
+  font-size: 18px !important;
+  max-width: 640px;
+  text-align: center;
+  line-height: 1.5;
 }

@@ -115,6 +115,8 @@ const App = (() => {
       radiantClass: null,
       radiantClassLocked: false,
       ancestryClass: null,  // classe onde o humano gastou o 1º bônus ancestral
+      pulverizadorCanone: null, // true = segue o Cânone, false = não segue, null = não perguntado
+      rompeCeuCanone: null,     // true = segue o Cânone, false = não segue, null = não perguntado
     },
     attributes: {
       forca: 0, velocidade: 0, intelecto: 0,
@@ -218,22 +220,33 @@ const App = (() => {
     for (let i = 0; i < CosData.LEVEL_TABLE.length; i++) {
       const row = CosData.LEVEL_TABLE[i];
       if (row.level > p.level) break;
-      
+
       if (typeof row.hpGain === 'string' && row.hpGain.includes('+FOR')) {
         maxHealth += parseInt(row.hpGain.split('+')[0]) + a.forca;
       } else {
         maxHealth += Number(row.hpGain) || 0;
       }
     }
+    if (p.radiantClass === 'Rompe-Céu' && p.rompeCeuCanone === true) {
+      maxHealth += p.level;
+    }
 
     const maxFocus = 2 + a.vontade;
-    
+
     const maxInvestiture = p.radiantClass
       ? 2 + (a.consciencia >= a.presenca ? a.consciencia : a.presenca)
       : 0;
 
+    const tier = CosData.LEVEL_TABLE.find(r => r.level === p.level)?.tier || 1;
+    let focoMaxCanone = null;
+    if (p.radiantClass === 'Pulverizador' && p.pulverizadorCanone === true) {
+      focoMaxCanone = Math.ceil(tier / 2);
+    } else if (p.radiantClass === 'Rompe-Céu' && p.rompeCeuCanone === true) {
+      focoMaxCanone = tier;
+    }
+
     return {
-      maxHealth, maxFocus, maxInvestiture,
+      maxHealth, maxFocus, maxInvestiture, focoMaxCanone,
       recDie: ATTR_TABLE[safeAttr(a.vontade)].recDie,
       senses: ATTR_TABLE[safeAttr(a.consciencia)].senses,
       movement: ATTR_TABLE[safeAttr(a.velocidade)].mov,
@@ -249,6 +262,7 @@ const App = (() => {
     container.innerHTML = `
       <div class="stat-row"><span class="stat-label"><span class="stat-dot" style="background:#e05252;"></span>Vida</span> <strong class="stat-val">${stats.maxHealth}</strong></div>
       <div class="stat-row"><span class="stat-label"><span class="stat-dot" style="background:#5b9bd5;"></span>Foco</span> <strong class="stat-val">${stats.maxFocus}</strong></div>
+      ${stats.focoMaxCanone !== null ? `<div class="stat-row"><span class="stat-label"><span class="stat-dot" style="background:#ef4444;"></span>Foco Cânone</span> <strong class="stat-val" style="color:#ef4444;">${stats.focoMaxCanone}</strong></div>` : ''}
       ${stats.maxInvestiture > 0 ? `<div class="stat-row"><span class="stat-label"><span class="stat-dot" style="background:var(--color-Plasmador);"></span>Investidura</span> <strong class="stat-val" style="color:var(--color-Plasmador);">${stats.maxInvestiture}</strong></div>` : ''}
       <div class="stat-row"><span class="stat-label"><span class="stat-dot" style="background:#6dbf67;"></span>Movimento</span> <strong class="stat-val">${stats.movement}</strong></div>
       <div class="stat-row"><span class="stat-label"><span class="stat-dot" style="background:#b08ae0;"></span>Sentidos</span> <strong class="stat-val">${stats.senses}</strong></div>
@@ -479,7 +493,7 @@ const App = (() => {
     return { can: true, reason: '' };
   }
 
-  function toggleSkill(skill) {
+  async function toggleSkill(skill) {
     const radiant = isRadiantSkill(skill);
     const additional = isAdditionalSkill(skill);
 
@@ -560,6 +574,43 @@ const App = (() => {
           }
         }
       }
+
+      // Animações de ideal radiante
+      if (radiant) {
+        const IDEAL_NAMES = ['Segundo Ideal', 'Terceiro Ideal', 'Quarto Ideal'];
+        if (IDEAL_NAMES.includes(skill.name)) {
+          const cls   = state.profile.radiantClass;
+
+          // Auto-grant de surto bloqueado pelo Cânone ao atingir o ideal que o libera
+          if (cls === 'Pulverizador' && state.profile.pulverizadorCanone === true) {
+            if (skill.name === 'Segundo Ideal') state.radiantPericias['divisao'] = 1;
+          }
+          if (cls === 'Rompe-Céu' && state.profile.rompeCeuCanone === true) {
+            if (skill.name === 'Segundo Ideal') state.radiantPericias['gravitacao'] = 1;
+            if (skill.name === 'Terceiro Ideal') state.radiantPericias['divisao'] = 1;
+          }
+
+          const color = clsColor(cls) || '#d4a853';
+          const svgText  = _wheelSvgCache[WHEEL_SVG_MAP[cls]] || null;
+          const glyphSrc = coloredSvgSrc(svgText, color) || (WHEEL_SVG_MAP[cls] || '');
+
+          const isTeceluz = cls === 'Teceluz';
+          const isQuarto  = skill.name === 'Quarto Ideal';
+          const needsPersonalOath = isQuarto || isTeceluz;
+
+          if (needsPersonalOath) {
+            if (!state.profile.radiantOaths) state.profile.radiantOaths = {};
+            const text = await _showPersonalOathModal(cls, color, glyphSrc, skill.name);
+            state.profile.radiantOaths[skill.name] = text;
+          } else {
+            const oathData = CosData.getOathData(cls);
+            const oathKey  = skill.name === 'Segundo Ideal' ? '2_oath' : '3_oath';
+            const phrase   = oathData && oathData[oathKey] ? oathData[oathKey] : null;
+            await _showOathAnimation(cls, color, glyphSrc, phrase ? [phrase] : null);
+          }
+        }
+      }
+
       return true;
     }
   }
@@ -684,15 +735,12 @@ const App = (() => {
 
     const actionBtn = document.getElementById('modal-action');
     if (actionBtn && !actionBtn.classList.contains('disabled')) {
-      actionBtn.addEventListener('click', () => {
-        const success = toggleSkill(skill);
+      actionBtn.addEventListener('click', async () => {
+        const success = await toggleSkill(skill);
         if (success) {
-          // Rebuild tree keeping view position
+          hideSkillModal();
           rebuildTree(true);
           renderSidebar();
-          // Re-show modal with updated state
-          // showSkillModal(skill);
-          hideSkillModal();
         }
       });
     }
@@ -1087,70 +1135,258 @@ const App = (() => {
     document.getElementById('radiant-wheel').classList.remove('visible');
   }
 
-  function _showOathAnimation(cls, color, glyphSrc) {
+  function _showOathAnimation(cls, color, glyphSrc, customPhrases) {
     return new Promise(resolve => {
       const overlay = document.createElement('div');
       overlay.id = 'radiant-oath-overlay';
 
       overlay.style.setProperty('--oath-color', color);
 
-      const PHRASES = [
+      const PHRASES = customPhrases || [
         'Vida antes da Morte',
         'Força antes da Fraqueza',
         'Jornada antes do Destino',
       ];
+
+      const single = PHRASES.length === 1;
+
+      // 1. O SEGREDO: Divide a frase em <span> individuais para cada letra poder acender
+      const formatPhrase = text => text.split('').map(char => {
+        if (char === ' ') return `<span style="display:inline-block; width:0.4em;">&nbsp;</span>`;
+        return `<span class="oath-letter">${char}</span>`;
+      }).join('');
 
       overlay.innerHTML = `
         <div class="oath-glyph-wrap">
           <img src="${glyphSrc}" alt="${cls}">
         </div>
         <div class="oath-phrases">
-          ${PHRASES.map(p => `<div class="oath-phrase">${p}</div>`).join('')}
+          ${PHRASES.map(p => `<div class="oath-phrase${single ? ' oath-phrase--single' : ''}">${formatPhrase(p)}</div>`).join('')}
         </div>
         <div class="oath-order-name">${cls}</div>
       `;
 
       document.body.appendChild(overlay);
 
-      const glyph  = overlay.querySelector('.oath-glyph-wrap');
+      const glyph   = overlay.querySelector('.oath-glyph-wrap');
       const phrases = overlay.querySelectorAll('.oath-phrase');
       const orderName = overlay.querySelector('.oath-order-name');
 
-      // t=0: fade in overlay
+      // 2. GERADOR DE VÓRTICE DE LUZ (Condensação 360º)
+      function animatePhraseFormation(phraseEl) {
+        setTimeout(() => {
+          const letters = phraseEl.querySelectorAll('.oath-letter');
+          
+          letters.forEach((letter, index) => {
+            const letterDelay = index * 50; // Levemente mais rápido para um fluxo épico
+            const rect = letter.getBoundingClientRect();
+            if (rect.width === 0) return;
+
+            // 4 partículas por letra para dar mais volume à espiral
+            for (let i = 0; i < 4; i++) {
+              const p = document.createElement('div');
+              p.className = 'wind-particle';
+              
+              const size = Math.random() * 3 + 1.5;
+              p.style.width = size + 'px';
+              p.style.height = size + 'px';
+              overlay.appendChild(p);
+
+              // DESTINO: O centro da letra
+              const endX = rect.left + rect.width / 2;
+              const endY = rect.top + rect.height / 2;
+
+              // ORIGEM: Nasce em um ângulo totalmente aleatório (360º) ao redor da tela
+              const startAngle = Math.random() * Math.PI * 2;
+              const startDist = 250 + Math.random() * 400; // Entre 250px e 650px de distância
+              
+              const startX = endX + Math.cos(startAngle) * startDist;
+              const startY = endY + Math.sin(startAngle) * startDist;
+
+              // A CURVA (Vórtice): Para não ir em linha reta, criamos um ponto intermediário
+              // que gira o ângulo original em uns 45º a 90º, fazendo a luz "rodopiar" para dentro
+              const direction = Math.random() > 0.5 ? 1 : -1;
+              const midAngle = startAngle + direction * (Math.PI / 3 + Math.random() * Math.PI / 4);
+              const midDist = startDist * 0.4; // Mais perto do centro
+              
+              const midX = endX + Math.cos(midAngle) * midDist;
+              const midY = endY + Math.sin(midAngle) * midDist;
+
+              const duration = 1000 + Math.random() * 600; 
+              const pDelay = letterDelay + Math.random() * 200;
+
+              // Animação em 4 estágios fluidos
+              p.animate([
+                { transform: `translate(${startX}px, ${startY}px) scale(0)`, opacity: 0 },
+                { transform: `translate(${midX}px, ${midY}px) scale(1.2)`, opacity: 0.8, offset: 0.4 }, // Puxado pela espiral
+                { transform: `translate(${endX}px, ${endY}px) scale(1.5)`, opacity: 1, offset: 0.85 },  // IMPACTO na letra
+                { transform: `translate(${endX}px, ${endY - 40 - Math.random()*30}px) scale(0)`, opacity: 0 } // Evapora pra CIMA (Stormlight genuína)
+              ], {
+                duration: duration,
+                delay: pDelay,
+                easing: 'ease-in-out',
+                fill: 'forwards'
+              });
+
+              setTimeout(() => p.remove(), pDelay + duration + 100);
+
+              // Acende a letra no momento exato em que a espiral se condensa
+              if (i === 0) { 
+                setTimeout(() => {
+                  letter.classList.add('glow-in');
+                }, pDelay + (duration * 0.85));
+              }
+            }
+          });
+        }, 50);
+      }
+
+      // Timing adaptado para a formação das letras (um pouco mais longo)
+      const PHRASE_DELAY = single ? [950] : [950, 2400, 3850];
+      const orderDelay   = single ? 3500 : 5800; 
+      const fadeDelay    = single ? 5500 : 7000;
+
       requestAnimationFrame(() => {
         overlay.classList.add('visible');
         setTimeout(() => { glyph.classList.add('show'); }, 100);
         setTimeout(() => { glyph.classList.add('pulsing'); }, 800);
 
-        // Frases aparecem uma por uma com vento revelando as letras
-        const PHRASE_DELAY = [950, 2050, 3150];
         phrases.forEach((el, i) => {
           setTimeout(() => {
             phrases.forEach((p, j) => { if (j < i) p.classList.add('dim'); });
+            
             el.classList.add('show');
+            // 3. O DISPARO DA MAGIA!
+            animatePhraseFormation(el); 
+            
           }, PHRASE_DELAY[i]);
         });
 
-        // Nome da ordem
         setTimeout(() => {
           phrases.forEach(p => p.classList.add('dim'));
           orderName.classList.add('show');
-        }, 4400);
+        }, orderDelay);
 
-        // Fade out
         setTimeout(() => {
           overlay.classList.add('fade-out');
           setTimeout(() => {
             overlay.remove();
             resolve();
           }, 600);
-        }, 5600);
+        }, fadeDelay);
+      });
+    });
+  }
+
+  function _showPersonalOathModal(cls, color, glyphSrc, idealName) {
+    return new Promise(resolve => {
+      const oathData = CosData.getOathData(cls);
+      const philosophy = oathData ? oathData.philosophy : '';
+
+      const overlay = document.createElement('div');
+      overlay.id = 'personal-oath-overlay';
+      overlay.innerHTML = `
+        <div class="personal-oath-modal" style="--oath-color:${color}">
+          <div class="personal-oath-glyph">
+            <img src="${glyphSrc}" alt="${cls}" style="filter:drop-shadow(0 0 16px ${color});width:72px;height:72px;">
+          </div>
+          <div class="personal-oath-header">
+            <div class="personal-oath-ideal-name">${idealName}</div>
+            <div class="personal-oath-order">${cls}</div>
+          </div>
+          ${philosophy ? `<div class="personal-oath-philosophy">"${philosophy}"</div>` : ''}
+          <div class="personal-oath-divider"></div>
+          <p class="personal-oath-instruction">Declare seu juramento pessoal. Estas palavras são suas — fale-as com convicção.</p>
+          <div class="personal-oath-input-wrap">
+            <textarea
+              id="personal-oath-textarea"
+              class="personal-oath-textarea"
+              placeholder="Escreva seu juramento aqui..."
+              rows="4"
+              maxlength="400"
+            ></textarea>
+            <div class="personal-oath-actions">
+              <button class="personal-oath-mic" id="personal-oath-mic-btn" title="Falar juramento">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+                  <rect x="9" y="2" width="6" height="12" rx="3"/>
+                  <path d="M5 10a7 7 0 0 0 14 0"/>
+                  <line x1="12" y1="19" x2="12" y2="22"/>
+                  <line x1="8" y1="22" x2="16" y2="22"/>
+                </svg>
+              </button>
+              <button class="personal-oath-confirm" id="personal-oath-confirm-btn" disabled>
+                Pronunciar Juramento
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(overlay);
+      requestAnimationFrame(() => overlay.classList.add('visible'));
+
+      const textarea   = overlay.querySelector('#personal-oath-textarea');
+      const confirmBtn = overlay.querySelector('#personal-oath-confirm-btn');
+      const micBtn     = overlay.querySelector('#personal-oath-mic-btn');
+
+      textarea.addEventListener('input', () => {
+        confirmBtn.disabled = textarea.value.trim().length === 0;
+      });
+
+      // Speech recognition (Web Speech API)
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRec) {
+        micBtn.style.display = 'none';
+      } else {
+        let recognition = null;
+        let listening = false;
+        micBtn.addEventListener('click', () => {
+          if (listening) {
+            recognition.stop();
+            return;
+          }
+          recognition = new SpeechRec();
+          recognition.lang = 'pt-BR';
+          recognition.interimResults = false;
+          recognition.maxAlternatives = 1;
+          recognition.onstart = () => {
+            listening = true;
+            micBtn.classList.add('listening');
+          };
+          recognition.onresult = (e) => {
+            const transcript = e.results[0][0].transcript;
+            textarea.value = (textarea.value ? textarea.value + ' ' : '') + transcript;
+            confirmBtn.disabled = textarea.value.trim().length === 0;
+          };
+          recognition.onend = () => {
+            listening = false;
+            micBtn.classList.remove('listening');
+          };
+          recognition.onerror = () => {
+            listening = false;
+            micBtn.classList.remove('listening');
+          };
+          recognition.start();
+        });
+      }
+
+      confirmBtn.addEventListener('click', async () => {
+        const text = textarea.value.trim();
+        if (!text) return;
+        overlay.classList.remove('visible');
+        await new Promise(r => setTimeout(r, 350));
+        overlay.remove();
+        // Show the oath animation with the user's own words
+        await _showOathAnimation(cls, color, glyphSrc, [text]);
+        resolve(text);
       });
     });
   }
 
   async function selectRadiantOrder(cls) {
     state.profile.radiantClass = cls;
+    state.profile.pulverizadorCanone = null;
+    state.profile.rompeCeuCanone = null;
     // Limpa surtos anteriores e concede 1 rank gratuito em cada surto da nova ordem
     state.radiantPericias = {};
     const surgeKeys = CosData.RADIANT_CLASS_PERICIAS[cls] || [];
@@ -1164,10 +1400,111 @@ const App = (() => {
 
     await _showOathAnimation(cls, color, glyphSrc);
 
+    if (cls === 'Pulverizador') {
+      state.profile.pulverizadorCanone = await _showCanoneModal(color);
+      if (state.profile.pulverizadorCanone === true) {
+        state.radiantPericias['divisao'] = 0;
+      }
+    }
+    if (cls === 'Rompe-Céu') {
+      state.profile.rompeCeuCanone = await _showRompeCeuCanoneModal(color);
+      if (state.profile.rompeCeuCanone === true) {
+        state.radiantPericias['gravitacao'] = 0;
+        state.radiantPericias['divisao'] = 0;
+      }
+    }
+
     await buildRadiantWheel();
     renderSidebar();
     renderClassTabs();
     rebuildTree();
+  }
+
+  function _showCanoneModal(color) {
+    return new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.id = 'canone-modal-overlay';
+      overlay.innerHTML = `
+        <div class="canone-modal" style="--canone-color:${color}">
+          <div class="canone-modal-glyph">
+            <img src="svg/Dustbringers_glyph.svg" alt="Pulverizador" style="filter:drop-shadow(0 0 12px ${color});width:64px;height:64px;">
+          </div>
+          <h2 class="canone-modal-title" style="color:${color}">O Caminho do Cânone</h2>
+          <p class="canone-modal-text">
+            Os Pulverizadores foram perseguidos por séculos por causa do poder destrutivo da sua Surge de <strong>Divisão</strong>. Alguns escolhem seguir o <strong>Cânone</strong> — um código de autorregulação — para provar que são mais do que sua reputação.
+          </p>
+          <div class="canone-modal-choices">
+            <button class="canone-btn canone-btn-no">
+              <span class="canone-btn-label">Não seguir o Cânone</span>
+              <span class="canone-btn-sub">Acesso completo à Divisão desde o início</span>
+            </button>
+            <button class="canone-btn canone-btn-yes" style="border-color:${color};box-shadow:0 0 12px ${color}40;">
+              <span class="canone-btn-label" style="color:${color}">Seguir o Cânone</span>
+              <span class="canone-btn-sub">Ganha <strong>Foco Cânone</strong> = metade do Patamar (arredondado para cima), mas a Surge de <strong>Divisão</strong> e seus talentos ficam bloqueados até o <strong>Segundo Ideal</strong></span>
+            </button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+      requestAnimationFrame(() => overlay.classList.add('visible'));
+
+      overlay.querySelector('.canone-btn-no').addEventListener('click', () => {
+        overlay.classList.remove('visible');
+        overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
+        resolve(false);
+      });
+      overlay.querySelector('.canone-btn-yes').addEventListener('click', () => {
+        overlay.classList.remove('visible');
+        overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
+        resolve(true);
+      });
+    });
+  }
+
+  function _showRompeCeuCanoneModal(color) {
+    return new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.id = 'canone-modal-overlay';
+      overlay.innerHTML = `
+        <div class="canone-modal" style="--canone-color:${color}">
+          <div class="canone-modal-glyph">
+            <img src="svg/Skybreakers_glyph.svg" alt="Rompe-Céu" style="filter:drop-shadow(0 0 12px ${color});width:64px;height:64px;">
+          </div>
+          <h2 class="canone-modal-title" style="color:${color}">O Caminho do Cânone</h2>
+          <p class="canone-modal-text">
+            Os Rompe-Céus seguem a lei acima de tudo — o <strong>Cânone</strong> é seu compromisso com a justiça verdadeira. Aqueles que o seguem ganham resistência e propósito, mas devem demonstrar seu comprometimento antes de dominar seus fluxos.
+          </p>
+          <div class="canone-modal-choices">
+            <button class="canone-btn canone-btn-no">
+              <span class="canone-btn-label">Não seguir o Cânone</span>
+              <span class="canone-btn-sub">Acesso completo às surges desde o início</span>
+            </button>
+            <button class="canone-btn canone-btn-yes" style="border-color:${color};box-shadow:0 0 12px ${color}40;">
+              <span class="canone-btn-label" style="color:${color}">Seguir o Cânone</span>
+              <span class="canone-btn-sub">
+                +1 Vida por nível e <strong>Foco Cânone</strong> = Patamar<br>
+                • <strong>Primeiro Ideal:</strong> sem acesso às surges<br>
+                • <strong>Segundo Ideal:</strong> desbloqueia Gravitação<br>
+                • <strong>Terceiro Ideal:</strong> desbloqueia Divisão
+              </span>
+            </button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+      requestAnimationFrame(() => overlay.classList.add('visible'));
+
+      overlay.querySelector('.canone-btn-no').addEventListener('click', () => {
+        overlay.classList.remove('visible');
+        overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
+        resolve(false);
+      });
+      overlay.querySelector('.canone-btn-yes').addEventListener('click', () => {
+        overlay.classList.remove('visible');
+        overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
+        resolve(true);
+      });
+    });
   }
 
   function renderRadiantSection() {
@@ -1345,17 +1682,19 @@ const App = (() => {
     container.appendChild(filterWrapper);
 
     // Helper para criar as 5 esferas com cor do atributo
-    const createSpheres = (currentRank, key, isRadiant = false, color = '#fff') => {
+    const createSpheres = (currentRank, key, isRadiant = false, color = '#fff', canoneBlocked = false) => {
       let spheresHtml = `<div class="sphere-track" style="--sphere-color:${color}">`;
       for (let i = 1; i <= 5; i++) {
         const isActive = i <= currentRank;
         const isLocked = i > maxRank;
+        const title = canoneBlocked ? 'Bloqueado pelo Cânone' : isLocked ? 'Bloqueado por Nível' : 'Rank ' + i;
         spheresHtml += `
-          <div class="sphere-btn ${isActive ? 'active' : ''} ${isLocked ? 'locked' : ''}"
+          <div class="sphere-btn ${isActive ? 'active' : ''} ${isLocked ? 'locked' : ''} ${canoneBlocked ? 'canone-locked' : ''}"
                data-idx="${i}"
                data-key="${key}"
                data-rad="${isRadiant}"
-               title="${isLocked ? 'Bloqueado por Nível' : 'Rank ' + i}">
+               data-canone-locked="${canoneBlocked}"
+               title="${title}">
           </div>`;
       }
       spheresHtml += '</div>';
@@ -1398,15 +1737,18 @@ const App = (() => {
         const rank = state.radiantPericias[key] || 0;
         const attrVal = state.attributes[info.attr] || 0;
         const total = rank + attrVal;
-        const color = ATTR_COLORS[info.attr] || clsColor(cls);
+        const canoneBlocked = isCanoneLockedSurge(key);
+        const color = canoneBlocked ? '#666' : (ATTR_COLORS[info.attr] || clsColor(cls));
 
         const div = document.createElement('div');
-        div.className = 'pericia-item';
+        div.className = 'pericia-item' + (canoneBlocked ? ' canone-surge-locked' : '');
         div.innerHTML = `
-          <span class="pericia-name" style="color:${clsColor(cls)}">${info.name}</span>
+          <span class="pericia-name" style="color:${canoneBlocked ? '#666' : clsColor(cls)}">
+            ${info.name}${canoneBlocked ? ' <span class="canone-lock-badge" title="Bloqueado pelo Cânone">🔒</span>' : ''}
+          </span>
           <div class="pericia-controls-new">
-            ${createSpheres(rank, key, true, color)}
-            <span class="pericia-total-val">${total}</span>
+            ${createSpheres(rank, key, true, color, canoneBlocked)}
+            <span class="pericia-total-val" style="${canoneBlocked ? 'color:#666' : ''}">${total}</span>
           </div>
         `;
         container.appendChild(div);
@@ -1419,7 +1761,17 @@ const App = (() => {
         const idx = parseInt(btn.dataset.idx);
         const key = btn.dataset.key;
         const isRadiant = btn.dataset.rad === 'true';
-        
+        const canoneBlocked = btn.dataset.canoneLocked === 'true';
+
+        if (canoneBlocked) {
+          const cls = state.profile.radiantClass;
+          if (cls === 'Pulverizador') notify('Surto bloqueado pelo Cânone — desbloqueie o Segundo Ideal primeiro.');
+          else if (cls === 'Rompe-Céu' && key === 'gravitacao') notify('Surto bloqueado pelo Cânone — desbloqueie o Segundo Ideal primeiro.');
+          else if (cls === 'Rompe-Céu' && key === 'divisao') notify('Surto bloqueado pelo Cânone — desbloqueie o Terceiro Ideal primeiro.');
+          else notify('Surto bloqueado pelo Cânone.');
+          return;
+        }
+
         if (idx > maxRank) {
           notify(`Nível insuficiente para Rank ${idx}`);
           return;
@@ -1433,7 +1785,7 @@ const App = (() => {
           return;
         }
 
-        if (isRadiant && newVal < 1) {
+        if (isRadiant && newVal < 1 && !isCanoneLockedSurge(key)) {
           notify('O 1º Rank de cada Surto é concedido gratuitamente ao escolher a Ordem Radiante.');
           return;
         }
@@ -1710,9 +2062,56 @@ const App = (() => {
     return CosData.RADIANT_CLASSES.includes(skill.cls);
   }
 
+  // Retorna true se o surto (chave) está bloqueado pelo Cânone no momento
+  function isCanoneLockedSurge(key) {
+    const cls = state.profile.radiantClass;
+    if (cls === 'Pulverizador' && state.profile.pulverizadorCanone === true) {
+      if (key === 'divisao') {
+        const seg = CosData.findRadiantSkillByName('Segundo Ideal', 'Pulverizador');
+        return !seg || !state.unlockedSkills.has(seg.id);
+      }
+    }
+    if (cls === 'Rompe-Céu' && state.profile.rompeCeuCanone === true) {
+      if (key === 'gravitacao') {
+        const seg = CosData.findRadiantSkillByName('Segundo Ideal', 'Rompe-Céu');
+        return !seg || !state.unlockedSkills.has(seg.id);
+      }
+      if (key === 'divisao') {
+        const ter = CosData.findRadiantSkillByName('Terceiro Ideal', 'Rompe-Céu');
+        return !ter || !state.unlockedSkills.has(ter.id);
+      }
+    }
+    return false;
+  }
+
   function canUnlockRadiantSkill(skill) {
     if (state.unlockedSkills.has(skill.id)) return { can: false, reason: 'Ja desbloqueado' };
     if (getTalentPointsRemaining() <= 0) return { can: false, reason: 'Sem pontos de talento' };
+
+    // Restrição do Cânone — Pulverizador: Divisão bloqueada até o Segundo Ideal
+    if (skill.cls === 'Pulverizador' && skill.sub === 'Divisão' && state.profile.pulverizadorCanone === true) {
+      const segundoIdeal = CosData.findRadiantSkillByName('Segundo Ideal', 'Pulverizador');
+      if (!segundoIdeal || !state.unlockedSkills.has(segundoIdeal.id)) {
+        return { can: false, reason: 'Requer Segundo Ideal (restrição do Cânone)' };
+      }
+    }
+
+    // Restrição do Cânone — Rompe-Céu: surges bloqueadas por ideal
+    if (skill.cls === 'Rompe-Céu' && state.profile.rompeCeuCanone === true) {
+      if (skill.sub === 'Gravitação' || skill.sub === 'Divisão') {
+        const segundoIdeal = CosData.findRadiantSkillByName('Segundo Ideal', 'Rompe-Céu');
+        const terceiroIdeal = CosData.findRadiantSkillByName('Terceiro Ideal', 'Rompe-Céu');
+        const temSegundo = segundoIdeal && state.unlockedSkills.has(segundoIdeal.id);
+        const temTerceiro = terceiroIdeal && state.unlockedSkills.has(terceiroIdeal.id);
+
+        if (skill.sub === 'Gravitação' && !temSegundo) {
+          return { can: false, reason: 'Requer Segundo Ideal (restrição do Cânone)' };
+        }
+        if (skill.sub === 'Divisão' && !temTerceiro) {
+          return { can: false, reason: 'Requer Terceiro Ideal (restrição do Cânone)' };
+        }
+      }
+    }
 
     // Level requirement
     if (skill.reqStat === 'level' && skill.reqVal > 0) {
@@ -1814,7 +2213,7 @@ const App = (() => {
   }
 
   function resetProfile() {
-    state.profile = { name: '', race: 'human', level: 1, radiantClass: null, radiantClassLocked: false, ancestryClass: null };
+    state.profile = { name: '', race: 'human', level: 1, radiantClass: null, radiantClassLocked: false, ancestryClass: null, pulverizadorCanone: null, rompeCeuCanone: null };
     state.attributes = { forca:0, velocidade:0, intelecto:0, vontade:0, consciencia:0, presenca:0 };
     initPericias();
     state.unlockedSkills = new Set();
@@ -2209,6 +2608,7 @@ const App = (() => {
     await CosData.loadSkills();
     await CosData.loadRadiantSkills();
     await CosData.loadAdditionalSkills();
+    await CosData.loadOaths();
     preloadWheelSvgs(); // fire-and-forget — wheel opens instantly later
 
     initPericias();
@@ -2419,6 +2819,10 @@ const App = (() => {
     const glowVal = document.getElementById('cfg-node-glow-val');
     const lineOpacityInput = document.getElementById('cfg-line-opacity');
     const lineOpacityVal = document.getElementById('cfg-line-opacity-val');
+    const glassOpacityInput = document.getElementById('cfg-glass-opacity');
+    const glassOpacityVal = document.getElementById('cfg-glass-opacity-val');
+    const gemColorInput = document.getElementById('cfg-gem-color');
+    const gemColorEnable = document.getElementById('cfg-gem-color-enable');
     const subLabelsInput = document.getElementById('cfg-sub-labels');
 
     // 1. Inicializar os valores do HTML com base no estado atual do Renderer
@@ -2432,6 +2836,10 @@ const App = (() => {
         lineOpacityInput.value = initialConfig.lineOpacity;
         lineOpacityVal.textContent = initialConfig.lineOpacity.toFixed(1);
       }
+      if (glassOpacityInput) {
+        glassOpacityInput.value = initialConfig.glassOpacity;
+        glassOpacityVal.textContent = initialConfig.glassOpacity.toFixed(2);
+      }
       if (subLabelsInput) {
         subLabelsInput.checked = initialConfig.showSubLabels;
       }
@@ -2441,7 +2849,7 @@ const App = (() => {
     btnVsp?.addEventListener('click', () => vspPanel?.classList.add('visible'));
     vspClose?.addEventListener('click', () => vspPanel?.classList.remove('visible'));
     vspBackdrop?.addEventListener('click', () => vspPanel?.classList.remove('visible'));
-    
+
     // Fechar também com a tecla Escape
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape' && vspPanel?.classList.contains('visible')) {
@@ -2462,11 +2870,32 @@ const App = (() => {
       SkillRenderer.setConfig({ lineOpacity: val });
     });
 
-    // 4. Evento do Checkbox de Subclasses (exige recriar a árvore)
+    glassOpacityInput?.addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      glassOpacityVal.textContent = val.toFixed(2);
+      SkillRenderer.setConfig({ glassOpacity: val });
+    });
+
+    // 4. Cor das gemas — ativa/desativa override e aplica cor em tempo real
+    function applyGemColor() {
+      if (!gemColorEnable || !gemColorInput) return;
+      if (gemColorEnable.checked) {
+        const hex = parseInt(gemColorInput.value.slice(1), 16);
+        SkillRenderer.setConfig({ gemColorOverride: hex });
+      } else {
+        SkillRenderer.setConfig({ gemColorOverride: null });
+      }
+    }
+    gemColorEnable?.addEventListener('change', applyGemColor);
+    gemColorInput?.addEventListener('input', () => {
+      if (gemColorEnable?.checked) applyGemColor();
+    });
+
+    // 5. Evento do Checkbox de Subclasses (exige recriar a árvore)
     subLabelsInput?.addEventListener('change', (e) => {
       SkillRenderer.setConfig({ showSubLabels: e.target.checked });
       // Reconstruímos a árvore passando 'true' para manter o Zoom/Pan (posição da câmara) atual do utilizador
-      rebuildTree(true); 
+      rebuildTree(true);
     });
   }
 
