@@ -302,6 +302,143 @@ const PdfExport = (() => {
     });
   }
 
+  // ---- PÁGINA DE DESCRIÇÕES DE HABILIDADES ----
+
+  function _wrapText(text, font, size, maxWidth) {
+    const words = (text || '').split(' ');
+    const lines = [];
+    let current = '';
+    for (const word of words) {
+      const test = current ? current + ' ' + word : word;
+      if (font.widthOfTextAtSize(test, size) > maxWidth) {
+        if (current) lines.push(current);
+        current = word;
+      } else {
+        current = test;
+      }
+    }
+    if (current) lines.push(current);
+    return lines;
+  }
+
+  async function addSkillDescriptionsPage(pdfDoc, state) {
+    const { rgb, StandardFonts } = PDFLib;
+    const font     = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+    const W = 595, H = 842;
+    const margin = 20, innerM = margin + 4;
+    const contentX = margin + 12;
+    const contentW = W - contentX - margin - 12;
+    const goldColor = rgb(0.83, 0.66, 0.33);
+    const bottomLimit = margin + 20;
+
+    function newPage() {
+      const p = pdfDoc.addPage([W, H]);
+      p.drawRectangle({ x: 0, y: 0, width: W, height: H, color: rgb(0.99, 0.98, 0.96) });
+      p.drawRectangle({ x: margin, y: margin, width: W - margin*2, height: H - margin*2, borderColor: goldColor, borderWidth: 1.5 });
+      p.drawRectangle({ x: innerM, y: innerM, width: W - innerM*2, height: H - innerM*2, borderColor: goldColor, borderWidth: 0.5 });
+      const ds = (cx, cy, sz) => p.drawSvgPath(`M ${cx} ${cy-sz} L ${cx+sz} ${cy} L ${cx} ${cy+sz} L ${cx-sz} ${cy} Z`, { color: goldColor });
+      ds(innerM, innerM, 4); ds(W-innerM, innerM, 4); ds(innerM, H-innerM, 4); ds(W-innerM, H-innerM, 4);
+      return p;
+    }
+
+    // Reusa a mesma lógica de dedup de talentos do exportToSheet
+    const allTalentPools = [...CosData.SKILLS, ...(CosData.RADIANT_SKILLS || []), ...(CosData.ADDITIONAL_SKILLS || [])];
+    const talentById = new Map(allTalentPools.map(s => [s.id, s]));
+    const candidateTalents = [];
+    const talentClassCount = {};
+    for (const id of state.unlockedSkills) {
+      if (state.singerFreeIds.has(id)) continue;
+      const s = talentById.get(id);
+      if (s) {
+        candidateTalents.push(s);
+        if (!state.freeUnlockedSkills.has(id)) talentClassCount[s.cls] = (talentClassCount[s.cls] || 0) + 1;
+      }
+    }
+    const seenNames = new Map();
+    const grouped = {};
+    const radiantCls = state.profile.radiantClass;
+    const ancestryCls = state.profile.ancestryClass;
+    for (const skill of candidateTalents) {
+      const prev = seenNames.get(skill.name);
+      if (prev) {
+        let replace = false;
+        if (skill.cls === radiantCls && prev.cls !== radiantCls) replace = true;
+        else if (skill.cls === ancestryCls && prev.cls !== ancestryCls && prev.cls !== radiantCls) replace = true;
+        else if (prev.cls !== radiantCls && prev.cls !== ancestryCls) {
+          const pf = state.freeUnlockedSkills.has(prev.id), sf = state.freeUnlockedSkills.has(skill.id);
+          if (pf && !sf) replace = true;
+          else if (pf === sf && (talentClassCount[skill.cls]||0) > (talentClassCount[prev.cls]||0)) replace = true;
+        }
+        if (replace) {
+          const old = grouped[prev.cls];
+          if (old) { const i = old.findIndex(s => s.name === skill.name); if (i >= 0) old.splice(i, 1); if (!old.length) delete grouped[prev.cls]; }
+          seenNames.set(skill.name, skill);
+          (grouped[skill.cls] = grouped[skill.cls] || []).push(skill);
+        }
+      } else {
+        seenNames.set(skill.name, skill);
+        (grouped[skill.cls] = grouped[skill.cls] || []).push(skill);
+      }
+    }
+
+    const allClassOrder = [...(CosData.CLASSES || []), ...(CosData.RADIANT_CLASSES || [])];
+    const sortedClasses = Object.keys(grouped).sort((a, b) => {
+      const ia = allClassOrder.indexOf(a), ib = allClassOrder.indexOf(b);
+      if (ia >= 0 && ib >= 0) return ia - ib;
+      if (ia >= 0) return -1; if (ib >= 0) return 1;
+      return a.localeCompare(b);
+    });
+
+    let page = newPage();
+    let y = H - margin - 24;
+
+    // Título da página
+    const titleTxt = 'HABILIDADES DO PERSONAGEM';
+    const titleW = fontBold.widthOfTextAtSize(titleTxt, 13);
+    page.drawText(titleTxt, { x: W/2 - titleW/2, y, size: 13, font: fontBold, color: goldColor });
+    y -= 8;
+    page.drawLine({ start: { x: margin+20, y }, end: { x: W-margin-20, y }, color: goldColor, thickness: 0.5, opacity: 0.7 });
+    y -= 16;
+
+    for (const cls of sortedClasses) {
+      const skills = grouped[cls];
+      if (!skills || !skills.length) continue;
+      const clrArr = _PDF_CLASS_COLORS[cls] || [0.3, 0.3, 0.3];
+      const clr = rgb(clrArr[0], clrArr[1], clrArr[2]);
+
+      // Garante espaço para o cabeçalho + pelo menos uma habilidade
+      if (y < bottomLimit + 36) { page = newPage(); y = H - margin - 24; }
+
+      // Cabeçalho da classe
+      page.drawText(cls.toUpperCase(), { x: contentX, y, size: 9.5, font: fontBold, color: clr });
+      y -= 3;
+      page.drawLine({ start: { x: contentX, y }, end: { x: W - margin - 12, y }, color: clr, thickness: 0.6, opacity: 0.6 });
+      y -= 11;
+
+      for (const skill of skills.sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name))) {
+        const descLines = _wrapText(skill.desc, font, 7.5, contentW);
+        const blockH = 10 + descLines.length * 9 + 5;
+
+        if (y - blockH < bottomLimit) { page = newPage(); y = H - margin - 24; }
+
+        // Nome da habilidade (rank + nome)
+        page.drawText(`R${skill.rank}  ${skill.name}`, { x: contentX + 4, y, size: 9, font: fontBold, color: rgb(0.12, 0.12, 0.12) });
+        y -= 10;
+
+        // Descrição
+        for (const line of descLines) {
+          if (y < bottomLimit) { page = newPage(); y = H - margin - 24; }
+          page.drawText(line, { x: contentX + 10, y, size: 7.5, font, color: rgb(0.35, 0.35, 0.35) });
+          y -= 9;
+        }
+        y -= 5;
+      }
+      y -= 8;
+    }
+  }
+
   // ---- PÁGINA VISUAL (gráficos + mapa) ----
 
   async function addVisualPage(pdfDoc, state) {
@@ -756,6 +893,7 @@ const PdfExport = (() => {
       }
 
       await addVisualPage(pdfDoc, state);
+      await addSkillDescriptionsPage(pdfDoc, state);
 
       console.log('[Sheet] Salvando PDF...');
       const filledBytes = await pdfDoc.save();
