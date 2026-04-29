@@ -72,6 +72,49 @@ var PdfExtractor = (function () {
   }
 
   // ------------------------------------------------------------------
+  // Reordena os items de uma página assumindo layout em até 2 colunas.
+  // O livro do Cosmere RPG usa diagramação em 2 colunas, e o pdfjs
+  // entrega items na ordem do content stream (frequentemente col-dir
+  // antes de col-esq), o que faz blocos vizinhos se sobreporem ao
+  // concatenar — uma habilidade absorve a descrição da seguinte.
+  // ------------------------------------------------------------------
+  function pageItemsToText(items, pageWidth) {
+    const mid = pageWidth / 2;
+    const cols = [[], []];
+    for (const it of items) {
+      if (!it.str) continue;
+      const x = it.transform[4];
+      cols[x < mid ? 0 : 1].push(it);
+    }
+
+    // Página de uma coluna só (ex: capas, índice): processa linear.
+    const min = Math.min(cols[0].length, cols[1].length);
+    const tot = cols[0].length + cols[1].length;
+    if (tot < 20 || min / tot < 0.1) {
+      return joinByYThenX(items);
+    }
+    return joinByYThenX(cols[0]) + '\n' + joinByYThenX(cols[1]);
+  }
+
+  function joinByYThenX(items) {
+    const sorted = items.slice().sort((a, b) => {
+      const dy = b.transform[5] - a.transform[5]; // top → bottom
+      if (Math.abs(dy) > 2) return dy;
+      return a.transform[4] - b.transform[4];     // left → right
+    });
+    let out = '', lastY = null;
+    for (const it of sorted) {
+      if (!it.str) continue;
+      const y = it.transform[5];
+      if (lastY !== null && Math.abs(lastY - y) > 2) out += '\n';
+      else if (out.length && !/\s$/.test(out))      out += ' ';
+      out += it.str;
+      lastY = y;
+    }
+    return out;
+  }
+
+  // ------------------------------------------------------------------
   // Extrai todo o texto do PDF, página por página
   // ------------------------------------------------------------------
   async function extractFullText(file, onProgress) {
@@ -82,14 +125,10 @@ var PdfExtractor = (function () {
 
     for (let p = 1; p <= total; p++) {
       if (onProgress) onProgress(`Lendo página ${p} de ${total}…`);
-      const page    = await pdf.getPage(p);
-      const content = await page.getTextContent();
-      let   pageStr = '';
-      for (const item of content.items) {
-        pageStr += item.str;
-        pageStr += item.hasEOL ? '\n' : ' ';
-      }
-      text += pageStr + '\n';
+      const page     = await pdf.getPage(p);
+      const viewport = page.getViewport({ scale: 1 });
+      const content  = await page.getTextContent();
+      text += pageItemsToText(content.items, viewport.width) + '\n';
     }
     return text;
   }
@@ -114,12 +153,14 @@ var PdfExtractor = (function () {
   // Regex que casa a linha de ativação inteira (para remover do corpo)
   const ACT_LINE_RE = /ativa[cç][aã]o\s*:\s*[★∞▶▷\d \t]*/gi;
 
-  // Padrões que marcam fim de uma entrada de habilidade no livro do Cosmere RPG
+  // Padrões que marcam fim de uma entrada de habilidade no livro do Cosmere RPG.
+  // Usa [\s\S] em vez de [^\n] para tolerar quebras de página/coluna entre o
+  // cabeçalho "Especialização X" e o subtítulo "Os talentos a seguir".
   const STOP_PATTERNS = [
     /Licenciado para\b/i,
     /Cap[ií]tulo\s+\d+\s*[:–]/i,
-    /Especializa[cç][aã]o\s+\w[^\n]{0,40}Os talentos a seguir/i,
-    /Os talentos a seguir[^.]{0,60}aparecem na (especializa[cç][aã]o|[aá]rvore)/i,
+    /Especializa[cç][aã]o\s+\w[\s\S]{0,80}Os talentos a seguir/i,
+    /Os talentos a seguir[\s\S]{0,80}aparecem na (especializa[cç][aã]o|[aá]rvore)/i,
   ];
 
   // Trunca `text` na primeira ocorrência de qualquer padrão de parada
@@ -130,6 +171,43 @@ var PdfExtractor = (function () {
       if (m && m.index < cut) cut = m.index;
     }
     return text.substring(0, cut).trimEnd();
+  }
+
+  // Retorna a posição raw (dentro de [windowStart, windowEnd)) onde o próximo
+  // nome de habilidade diferente de foundName aparece como cabeçalho de bloco
+  // (precedido por quebra de linha ou fim de frase). Retorna windowEnd se não encontrar.
+  function clipAtNextSkillName(rawText, windowStart, windowEnd, foundName, sortedNames) {
+    const window = rawText.substring(windowStart, windowEnd);
+    const { normText, rawPos } = buildTextIndex(window);
+    let cut = window.length;
+
+    for (const name of sortedNames) {
+      if (name === foundName) continue;
+      const nn = norm(name);
+      if (nn.length < 4) continue;
+
+      let pos = normText.indexOf(nn);
+      while (pos !== -1) {
+        if (!isInPrereqContext(normText, pos, 80)) {
+          // Verifica fronteira de palavra no texto normalizado
+          const nb = pos > 0 ? normText[pos - 1] : ' ';
+          const na = (pos + nn.length) < normText.length ? normText[pos + nn.length] : ' ';
+          if (!/[a-z0-9]/.test(nb) && !/[a-z0-9]/.test(na)) {
+            const rIdx = pos < rawPos.length ? rawPos[pos] : window.length;
+            if (rIdx < cut) {
+              // Só corta se o nome aparece como cabeçalho: após \n (com rank opcional) ou fim de frase
+              const rawCtx = window.substring(Math.max(0, rIdx - 15), rIdx);
+              if (/[\n\r]\s*(?:R\d+\s+)?$/.test(rawCtx) || /[.!?]\s+$/.test(rawCtx)) {
+                cut = rIdx;
+              }
+            }
+          }
+        }
+        pos = normText.indexOf(nn, pos + 1);
+      }
+    }
+
+    return windowStart + cut;
   }
 
   // ------------------------------------------------------------------
@@ -286,8 +364,9 @@ var PdfExtractor = (function () {
       }
       if (!foundName) continue;
 
-      // Extrai e limpa a descrição
-      const descRaw = rawText.substring(descStart, Math.min(nextBlockStart, descStart + MAX_DESC_LEN));
+      // Extrai e limpa a descrição (cortando no próximo nome de habilidade encontrado como cabeçalho)
+      const rawWindowEnd = Math.min(nextBlockStart, descStart + MAX_DESC_LEN);
+      const descRaw = rawText.substring(descStart, clipAtNextSkillName(rawText, descStart, rawWindowEnd, foundName, sortedNames));
       const full    = truncateAtStop(descRaw.trim());
       if (full.length < 15 || looksLikeTableEntry(full)) continue;
 

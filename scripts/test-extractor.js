@@ -46,16 +46,53 @@ function loadSkillNames() {
     'br_adittionais_trees.json',
   ];
   const names = new Set();
+  const collect = v => {
+    if (Array.isArray(v)) v.forEach(collect);
+    else if (v && typeof v === 'object') {
+      if (v.name) names.add(v.name);
+      else for (const k of Object.keys(v)) collect(v[k]);
+    }
+  };
   for (const file of files) {
     const p = path.join(DATA_DIR, file);
     if (!fs.existsSync(p)) continue;
-    const arr = JSON.parse(fs.readFileSync(p, 'utf8'));
-    arr.forEach(s => s.name && names.add(s.name));
+    collect(JSON.parse(fs.readFileSync(p, 'utf8')));
   }
   return [...names];
 }
 
 // ── Extração de texto via pdfjs-dist (legacy = funciona no Node) ──────────────
+function joinByYThenX(items) {
+  const sorted = items.slice().sort((a, b) => {
+    const dy = b.transform[5] - a.transform[5];
+    if (Math.abs(dy) > 2) return dy;
+    return a.transform[4] - b.transform[4];
+  });
+  let out = '', lastY = null;
+  for (const it of sorted) {
+    if (!it.str) continue;
+    const y = it.transform[5];
+    if (lastY !== null && Math.abs(lastY - y) > 2) out += '\n';
+    else if (out.length && !/\s$/.test(out))      out += ' ';
+    out += it.str;
+    lastY = y;
+  }
+  return out;
+}
+
+function pageItemsToText(items, pageWidth) {
+  const mid  = pageWidth / 2;
+  const cols = [[], []];
+  for (const it of items) {
+    if (!it.str) continue;
+    cols[it.transform[4] < mid ? 0 : 1].push(it);
+  }
+  const min = Math.min(cols[0].length, cols[1].length);
+  const tot = cols[0].length + cols[1].length;
+  if (tot < 20 || min / tot < 0.1) return joinByYThenX(items);
+  return joinByYThenX(cols[0]) + '\n' + joinByYThenX(cols[1]);
+}
+
 async function extractText(pdfPath) {
   const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
   pdfjsLib.GlobalWorkerOptions.workerSrc = false;
@@ -67,14 +104,10 @@ async function extractText(pdfPath) {
 
   for (let p = 1; p <= total; p++) {
     process.stdout.write(`\r  Lendo página ${p}/${total}…`);
-    const page    = await pdf.getPage(p);
-    const content = await page.getTextContent();
-    let   pageStr = '';
-    for (const item of content.items) {
-      pageStr += item.str;
-      pageStr += item.hasEOL ? '\n' : ' ';
-    }
-    text += pageStr + '\n';
+    const page     = await pdf.getPage(p);
+    const viewport = page.getViewport({ scale: 1 });
+    const content  = await page.getTextContent();
+    text += pageItemsToText(content.items, viewport.width) + '\n';
   }
   process.stdout.write('\n');
   return text;
@@ -188,66 +221,110 @@ function makeSummary(fullText) {
   return cleaned.length > 140 ? cut + '…' : cut;
 }
 
-// ── Mesma lógica de buildDescriptions do pdf-extractor.js ────────────────────
-function buildDescriptions(rawText, skillNames) {
-  const { normText, rawPos } = buildTextIndex(rawText);
-  const results = {};
+// Padrões de fim de bloco — idênticos a pdf-extractor.js
+const STOP_PATTERNS = [
+  /Licenciado para\b/i,
+  /Cap[ií]tulo\s+\d+\s*[:–]/i,
+  /Especializa[cç][aã]o\s+\w[\s\S]{0,80}Os talentos a seguir/i,
+  /Os talentos a seguir[\s\S]{0,80}aparecem na (especializa[cç][aã]o|[aá]rvore)/i,
+];
+function truncateAtStop(text) {
+  let cut = text.length;
+  for (const re of STOP_PATTERNS) {
+    const m = re.exec(text);
+    if (m && m.index < cut) cut = m.index;
+  }
+  return text.substring(0, cut).trimEnd();
+}
 
-  const sorted    = [...new Set(skillNames)].sort((a, b) => b.length - a.length);
-  const normNames = sorted.map(n => norm(n));
-
-  // Coleta todos os hits de todos os nomes (pode haver múltiplas ocorrências)
-  const allHits = [];
-  for (let i = 0; i < sorted.length; i++) {
-    const nn  = normNames[i];
-    let   pos = normText.indexOf(nn);
+function clipAtNextSkillName(rawText, windowStart, windowEnd, foundName, sortedNames) {
+  const window = rawText.substring(windowStart, windowEnd);
+  const { normText, rawPos } = buildTextIndex(window);
+  let cut = window.length;
+  for (const name of sortedNames) {
+    if (name === foundName) continue;
+    const nn = norm(name);
+    if (nn.length < 4) continue;
+    let pos = normText.indexOf(nn);
     while (pos !== -1) {
-      allHits.push({ name: sorted[i], start: pos, nameEnd: pos + nn.length });
+      if (!isInPrereqContext(normText, pos, 80)) {
+        const nb = pos > 0 ? normText[pos - 1] : ' ';
+        const na = (pos + nn.length) < normText.length ? normText[pos + nn.length] : ' ';
+        if (!/[a-z0-9]/.test(nb) && !/[a-z0-9]/.test(na)) {
+          const rIdx = pos < rawPos.length ? rawPos[pos] : window.length;
+          if (rIdx < cut) {
+            const rawCtx = window.substring(Math.max(0, rIdx - 15), rIdx);
+            if (/[\n\r]\s*(?:R\d+\s+)?$/.test(rawCtx) || /[.!?]\s+$/.test(rawCtx)) cut = rIdx;
+          }
+        }
+      }
       pos = normText.indexOf(nn, pos + 1);
     }
   }
-  allHits.sort((a, b) => a.start - b.start);
+  return windowStart + cut;
+}
 
-  // Para cada skill, testa todas as ocorrências e escolhe a melhor janela
-  const byName = {};
-  for (const hit of allHits) {
-    if (!byName[hit.name]) byName[hit.name] = [];
-    byName[hit.name].push(hit);
+function buildTextIndexLocal(rawText) { return buildTextIndex(rawText); }
+
+// Abordagem primária: âncora em "Ativação:" — idêntica a pdf-extractor.js
+function buildDescriptions(rawText, skillNames) {
+  const results     = {};
+  const sortedNames = [...new Set(skillNames)].sort((a, b) => b.length - a.length);
+
+  const ACT_RE = /ativa[cç][aã]o\s*:\s*[★∞▶▷\d]+/gi;
+  const acts   = [];
+  let m;
+  while ((m = ACT_RE.exec(rawText)) !== null) {
+    acts.push({ blockStart: m.index, descStart: m.index + m[0].length });
   }
 
-  for (const [name, hits] of Object.entries(byName)) {
-    let bestFull  = '';
-    let bestScore = -Infinity;
+  for (let i = 0; i < acts.length; i++) {
+    const { blockStart, descStart } = acts[i];
+    const nextBlockStart = i + 1 < acts.length ? acts[i + 1].blockStart : rawText.length;
 
-    for (const { start, nameEnd } of hits) {
-      if (isInPrereqContext(normText, start)) continue;
+    const LOOKBACK    = 600;
+    const lookbackRaw = rawText.substring(Math.max(0, blockStart - LOOKBACK), blockStart);
+    const PREREQ_RE   = /pré.?requisitos\s*:/gi;
+    let lastPrereqIdx = -1, pm;
+    while ((pm = PREREQ_RE.exec(lookbackRaw)) !== null) lastPrereqIdx = pm.index;
+    const headingArea = lastPrereqIdx > 0 ? lookbackRaw.substring(0, lastPrereqIdx) : lookbackRaw;
+    const normHeading = norm(headingArea);
 
-      // Ignora hits em contexto de pré-requisito como fronteira de janela (win=80)
-      const nextIdx    = allHits.findIndex(h => h.start > nameEnd && !isInPrereqContext(normText, h.start, 80));
-      const nextNorm   = nextIdx !== -1 ? allHits[nextIdx].start : Infinity;
-      const rawStart   = nameEnd < rawPos.length ? rawPos[nameEnd] : rawText.length;
-      const rawNextHit = nextNorm < rawPos.length ? rawPos[nextNorm] : rawText.length;
-      const rawEnd     = Math.min(rawNextHit, rawStart + MAX_DESC_LEN);
-      const full       = rawText.substring(rawStart, rawEnd).trim();
-
-      if (full.length < 20 || looksLikeTableEntry(full)) continue;
-      const score = descScore(full);
-      if (score < 0) continue;
-      if (score > bestScore || (score === bestScore && full.length > bestFull.length)) {
-        bestFull  = full;
-        bestScore = score;
+    let foundName = null, foundPos = -1;
+    for (const name of sortedNames) {
+      const nn = norm(name);
+      if (nn.length < 3) continue;
+      let pos = normHeading.indexOf(nn);
+      while (pos !== -1) {
+        if (!isInPrereqContext(normHeading, pos) && pos > foundPos) {
+          foundPos = pos; foundName = name;
+        }
+        pos = normHeading.indexOf(nn, pos + 1);
       }
     }
+    if (!foundName) continue;
 
-    if (bestFull) {
-      const cleanFull   = fixHyphens(bestFull);
-      const flatFull    = cleanFull.replace(/\n/g, ' ').replace(/\s+/g, ' ');
-      const activation  = extractActivation(flatFull);
-      const description = cleanBody(flatFull.replace(ACT_LINE_RE, '').trim());
-      results[name] = { description, desc: makeSummary(cleanFull), activation };
+    const rawWindowEnd = Math.min(nextBlockStart, descStart + MAX_DESC_LEN);
+    const descRaw = rawText.substring(descStart, clipAtNextSkillName(rawText, descStart, rawWindowEnd, foundName, sortedNames));
+    const full    = truncateAtStop(descRaw.trim());
+    if (full.length < 15 || looksLikeTableEntry(full)) continue;
+
+    const score = descScore(full);
+    if (score < 0) continue;
+
+    const cleanFull   = fixHyphens(full);
+    const flatFull    = cleanFull.replace(/\n/g, ' ').replace(/\s+/g, ' ');
+    const activation  = extractActivation(rawText.substring(blockStart, descStart));
+    const description = cleanBody(flatFull.replace(ACT_LINE_RE, '').trim());
+    const desc        = makeSummary(cleanFull);
+
+    const existing = results[foundName];
+    if (!existing || score > (existing._score || 0) ||
+        (score === (existing._score || 0) && description.length > (existing.description || '').length)) {
+      results[foundName] = { description, desc, activation, _score: score };
     }
   }
-
+  for (const v of Object.values(results)) delete v._score;
   return results;
 }
 
